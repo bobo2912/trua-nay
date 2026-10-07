@@ -307,7 +307,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.4.3", BUILD="07/10/2026";
+const VERSION="2.4.4", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -494,6 +494,7 @@ function deleteBill(b){
 /* ---------- boot & identity ---------- */
 const fbReady=()=>!!(FB&&FB.apiKey&&FB.projectId&&!/^DAN_/.test(FB.apiKey));
 async function boot(){
+  if(/[?&]v=/.test(location.search))history.replaceState(null,"",location.pathname+location.hash);
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
   renderLoading("Đang kết nối…");
   if(!fbReady()){renderLoading("Chưa điền cấu hình Firebase trong config.js.");return}
@@ -1531,9 +1532,10 @@ function showUpdateBar(){
 }
 async function applyUpdate(){
   toast("Đang cập nhật…");
-  try{const regs=await navigator.serviceWorker?.getRegistrations?.()||[];for(const g of regs)await g.update().catch(()=>{});
+  // drop the old service worker and caches, then load with a cache-busting URL so neither the worker nor the browser cache serves the old page
+  try{const regs=await navigator.serviceWorker?.getRegistrations?.()||[];await Promise.all(regs.map(g=>g.unregister().catch(()=>{})));
     if(window.caches){for(const k of await caches.keys())await caches.delete(k)}}catch(e){}
-  location.reload();
+  location.replace(location.pathname+"?v="+encodeURIComponent(upd.latest||Date.now())+location.hash);
 }
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&S.mode==="db"&&(!upd.at||Date.now()-upd.last>30*60000)){upd.last=Date.now();checkUpdate()}});
 
