@@ -311,7 +311,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.5.0", BUILD="07/10/2026";
+const VERSION="2.6.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -1360,15 +1360,73 @@ function viewContacts(){
   let cs=contacts();const f=freq();
   if(ui.cq)cs=cs.filter(c=>norm(c.name+" "+(c.phone||"")).includes(norm(ui.cq)));
   let h=`<input class="inp" id="cQ" placeholder="Tìm tên, số Zalo" value="${esc(ui.cq)}" autocomplete="off">`;
-  if(!S.contacts.filter(c=>!c.hidden).length)return h+`<div class="empty" style="margin-top:12px"><b>Danh bạ trống</b>Thêm người hay ăn cùng bằng nút +, hoặc gửi link của bạn (nút liên kết) để họ thêm bạn.</div>`;
+  if(!S.contacts.filter(c=>!c.hidden).length)return h+`<div class="empty" style="margin-top:12px"><b>Danh bạ trống</b>Thêm người hay ăn cùng bằng nút +, hoặc gửi link của bạn (nút liên kết) để họ thêm bạn.<div style="margin-top:10px"><button class="btn mint" id="cImport">Nhập từ danh bạ điện thoại</button></div></div>`;
   h+=`<div class="card" style="margin-top:8px;padding-block:0"><div class="list">${cs.map(c=>{const bal=balanceWith(c);const n=f[c.pid?"p_"+c.pid:"c_"+c.id]||0;
     return `<button class="li" data-c="${c.id}">${avatar(c.name)}<span class="mid"><b>${esc(c.name)}</b><small>${[n?n+" bữa":"",c.pid?"đã liên kết":"",c.phone||""].filter(Boolean).map(esc).join(" · ")||"&nbsp;"}</small></span><span class="end">${bal?`<b class="num ${bal>0?"pos":"neg"}">${bal>0?"+":"−"}${fmtK(Math.abs(bal))}</b>`:""}</span></button>`}).join("")||`<p class="small muted" style="padding:10px 2px">Không có ai khớp.</p>`}</div></div>`;
   return h;
 }
 bind.contacts=m=>{
+  const im=$("#cImport",m);if(im)im.onclick=startImport;
   const q=$("#cQ",m);q.oninput=()=>{ui.cq=q.value;render()};
   $$("[data-c]",m).forEach(b=>b.onclick=()=>openContact(b.dataset.c));
 };
+/* ---------- import from the phone's contacts (Contact Picker on Android, .vcf file on iPhone) ---------- */
+const canPickContacts=()=>"contacts" in navigator&&"ContactsManager" in window;
+function normPhone(p){p=String(p||"").replace(/[^\d+]/g,"");if(p.startsWith("+84"))p="0"+p.slice(3);else if(p.startsWith("84")&&p.length===11)p="0"+p.slice(2);return p.replace(/\D/g,"")}
+function parseVCF(text){
+  const raw=String(text||"").replace(/\r\n/g,"\n").replace(/\n[ \t]/g,"").replace(/=\n/g,"");
+  const qp=s=>{try{return decodeURIComponent(s.replace(/=([0-9A-F]{2})/gi,"%$1"))}catch(e){return s}};
+  const out=[];
+  for(const card of raw.split(/BEGIN:VCARD/i).slice(1)){
+    let fn="",n="",tels=[];
+    for(const line of card.split("\n")){
+      const i=line.indexOf(":");if(i<0)continue;const key=line.slice(0,i).toUpperCase();let val=line.slice(i+1).trim();
+      if(/QUOTED-PRINTABLE/.test(key))val=qp(val);
+      val=val.replace(/\\([,;\\])/g,"$1");
+      if(/^(ITEM\d+\.)?FN(;|$)/.test(key))fn=val;
+      else if(/^(ITEM\d+\.)?N(;|$)/.test(key)){const p=val.split(";");n=[p[1],p[2],p[0]].filter(Boolean).join(" ").trim()}
+      else if(/^(ITEM\d+\.)?TEL(;|$)/.test(key)){const t=normPhone(val);if(t)tels.push({t,mob:/CELL|IPHONE|MOBILE/.test(key)})}
+    }
+    const name=(fn||n).trim();const tel=(tels.find(x=>x.mob)||tels[0]||{}).t||"";
+    if(name||tel)out.push({name:name||tel,phone:tel});
+  }
+  return out;
+}
+function startImport(){
+  if(canPickContacts()){
+    navigator.contacts.select(["name","tel"],{multiple:true}).then(list=>{previewImport(list.map(c=>({name:((c.name||[])[0]||"").trim(),phone:normPhone((c.tel||[])[0]||"")})).filter(c=>c.name||c.phone).map(c=>({name:c.name||c.phone,phone:c.phone})))}).catch(()=>{});
+    return;
+  }
+  const el=openSheet("Nhập từ danh bạ điện thoại",`<div class="stack">
+    <p class="small" style="margin:0">iPhone chưa cho trang web đọc thẳng danh bạ, nên mình dùng file danh bạ (.vcf):</p>
+    <ol class="small" style="margin:0;padding-left:18px;line-height:1.6"><li>Mở app <b>Danh bạ</b>, giữ ngón tay lên một liên hệ, chọn <b>Chia sẻ liên hệ</b> → <b>Lưu vào Tệp</b>.<br><span class="muted">Nhiều người một lần: bấm <b>Danh sách</b> ở góc trái, giữ lên danh sách, chọn <b>Xuất</b>.</span></li><li>Quay lại đây, bấm <b>Chọn file danh bạ</b>.</li></ol>
+    <input type="file" id="vcfFile" accept=".vcf,text/vcard,text/x-vcard" multiple hidden>
+    <button class="btn mint block" id="vcfPick">${ic("contacts")} Chọn file danh bạ</button><p class="err" id="vcfErr" hidden></p></div>`);
+  $("#vcfPick",el).onclick=()=>$("#vcfFile",el).click();
+  $("#vcfFile",el).onchange=async e=>{const files=[...(e.target.files||[])];if(!files.length)return;let list=[];
+    for(const f of files)list=list.concat(parseVCF(await f.text()));
+    if(!list.length){const er=$("#vcfErr",el);er.textContent="Không đọc được liên hệ nào trong file này.";er.hidden=false;return}
+    previewImport(list)};
+}
+function previewImport(list){
+  const seen=new Set();list=list.filter(c=>{const k=c.phone||norm(c.name);if(seen.has(k))return false;seen.add(k);return true});
+  const has=c=>S.contacts.some(x=>!x.hidden&&((c.phone&&normPhone(x.phone)===c.phone)||norm(x.name)===norm(c.name)));
+  const rows=list.map(c=>({...c,dup:has(c),on:!has(c)}));let q="";
+  const el=openSheet("Chọn người để thêm","");
+  const draw=()=>{const vis=rows.filter(r=>!q||norm(r.name+" "+r.phone).includes(norm(q)));const n=rows.filter(r=>r.on).length;
+    el.innerHTML=`<div class="stack">${rows.length>8?`<input class="inp" id="imQ" placeholder="Tìm" value="${esc(q)}" autocomplete="off">`:""}
+      <div class="row between small"><span class="muted">${rows.length} liên hệ · đã chọn ${n}</span><button class="btn sm ghost" id="imAll">${n<rows.filter(r=>!r.dup).length?"Chọn tất cả":"Bỏ chọn"}</button></div>
+      <div class="card" style="padding-block:0;max-height:52vh;overflow:auto"><div class="list">${vis.map(r=>{const i=rows.indexOf(r);return `<label class="li" style="cursor:pointer"><input type="checkbox" data-im="${i}" ${r.on?"checked":""} style="width:18px;height:18px;flex:none">${avatar(r.name)}<span class="mid"><b>${esc(r.name)}</b><small>${esc(r.phone||"Không có số")}${r.dup?" · đã có trong danh bạ":""}</small></span></label>`}).join("")}</div></div>
+      <button class="btn mint block" id="imGo" ${n?"":"disabled"}>Thêm ${n} người</button></div>`;
+    const qi=$("#imQ",el);if(qi){qi.oninput=()=>{q=qi.value;draw();const x=$("#imQ",el);x.focus();x.setSelectionRange(q.length,q.length)}}
+    $$("[data-im]",el).forEach(c=>c.onchange=()=>{rows[+c.dataset.im].on=c.checked;draw()});
+    $("#imAll",el).onclick=()=>{const all=rows.filter(r=>r.on).length<rows.filter(r=>!r.dup).length;rows.forEach(r=>r.on=all&&!r.dup);draw()};
+    $("#imGo",el).onclick=async()=>{const pick=rows.filter(r=>r.on);const now=new Date().toISOString();
+      for(let i=0;i<pick.length;i+=400){const bt=writeBatch(fs);pick.slice(i,i+400).forEach(r=>bt.set(D("profiles",myPid(),"contacts",rid()+i),{name:r.name.slice(0,40),phone:r.phone,bank:null,pid:null,hidden:false,createdAt:now}));await bt.commit().catch(onWriteErr)}
+      closeSheet();toast("Đã thêm "+pick.length+" người vào danh bạ")};
+  };
+  draw();
+}
 function shareMyLink(){
   const url=shareBase()+"#p="+myPid()+"~"+encodeURIComponent(myName());
   shareOrCopy({title:"Trưa Nay",text:`Thêm ${myName()} vào danh bạ Trưa Nay để chia bill:`,url},"Đã chép link của bạn");
@@ -1377,6 +1435,7 @@ function openContact(id){
   const c=id?contactById(id):null;const card=c&&c.pid?S.cards[c.pid]:null;const bk=(c&&c.bank)||{};
   const n=c?(freq()[c.pid?"p_"+c.pid:"c_"+c.id]||0):0;const bal=c?balanceWith(c):0;
   const el=openSheet(c?c.name:"Thêm người",`<div class="stack">
+    ${c?"":`<button class="btn block" id="ctImport">${ic("contacts")} Nhập từ danh bạ điện thoại</button><div class="small muted" style="text-align:center">hoặc thêm từng người</div>`}
     ${c?`<div class="row small muted">${n} bữa ăn cùng${bal?` · <span class="${bal>0?"pos":"neg"}">${bal>0?"nợ bạn":"bạn nợ"} ${fmt(Math.abs(bal))}</span>`:""}${c.pid?` · <span class="badge b-ok">Đã liên kết</span>`:""}</div>`:""}
     <div class="field"><label class="lbl" for="ctName">Tên</label><input class="inp" id="ctName" value="${esc(c?c.name:"")}" maxlength="40" placeholder="Vd: Hà béo"></div>
     <div class="field"><label class="lbl" for="ctPhone">Số Zalo</label><input class="inp" id="ctPhone" inputmode="tel" value="${esc(c?c.phone||"":"")}" maxlength="15" placeholder="Không bắt buộc"></div>
@@ -1386,6 +1445,7 @@ function openContact(id){
     <p class="err" id="ctErr" hidden></p>
     <button class="btn mint block" id="ctSave">${c?"Lưu":"Thêm vào danh bạ"}</button>
     ${c?`<div class="grid2"><button class="btn" id="ctBill">Tạo bill</button><button class="btn danger" id="ctDel">${ui.confirm==="ct"+id?"Bấm lần nữa":"Xóa"}</button></div>`:""}</div>`);
+  const ci=$("#ctImport",el);if(ci)ci.onclick=()=>{closeSheet();startImport()};
   $("#ctSave",el).onclick=()=>{const name=$("#ctName",el).value.trim();if(!name){const e=$("#ctErr",el);e.textContent="Nhập tên.";e.hidden=false;return}
     const d={name,phone:$("#ctPhone",el).value.replace(/[^\d]/g,"")};
     if(!(card&&card.bank)){const b=readBank("ct",el);if(b===false){const e=$("#ctErr",el);e.textContent="Chọn ngân hàng và nhập đủ số tài khoản, hoặc để trống.";e.hidden=false;return}d.bank=b}
@@ -1600,7 +1660,7 @@ function openGuide(){
   const G=[
    ["Bắt đầu","Nhập số Zalo và tài khoản ngân hàng để người khác quét QR trả bạn.",
     `<div class="mscr"><div class="mcap">Cài đặt → Hồ sơ</div>${row(av("Bảo")+" <b>Bảo</b>","")}<div class="minp">Vietcombank</div><div class="minp">0011 0012 3456 7</div><div class="mline">${hl(ic("qr")+" Xem thử QR")}${mb("Lưu","mint")}</div></div>`],
-   ["Thêm người vào danh bạ","Bấm + để thêm, hoặc nút liên kết để gửi link của bạn: ai mở link sẽ có bạn trong danh bạ.",
+   ["Thêm người vào danh bạ","Bấm + để thêm từng người, hoặc Nhập từ danh bạ điện thoại để chọn nhiều người một lúc. Nút liên kết gửi link của bạn: ai mở link sẽ có bạn trong danh bạ.",
     `<div class="mscr"><div class="mhead"><b>Danh bạ</b><span>${hl(ic("link"))} ${hl(ic("plus"),"")}</span></div>${row(av("Hà")+" Hà","<span class='pos'>+100k</span>")}${row(av("Minh")+" Minh","")}</div>`],
    ["Tạo bill","Tab Bill, bấm +. Chọn Ai ăn, Ai trả, rồi Chia thế nào. Chia đều: quét ảnh bill (miễn phí) để lưu danh sách món và lấy tổng, hoặc nhập tay. Gán món: quét hoặc nhập món, món số lượng 2 trở lên tự tách dòng, bấm tên để gán. Theo người và Tự nhập: gõ số tiền từng người.",
     `<div class="mscr"><div class="mcap">Ai ăn</div><div class="mline">${mb(av("Tôi")+"Tôi","on")}${mb(av("Hà")+"Hà","on")}${mb(av("Minh")+"Minh","on")}${mb("+ Người mới")}</div>
