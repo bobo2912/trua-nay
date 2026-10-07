@@ -152,10 +152,12 @@ textarea.inp{resize:vertical;min-height:60px}
 .bill .mid small{display:block;color:var(--muted);font-size:.74rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bill .end{text-align:right;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .bill .end b{font-family:var(--f-head);font-weight:800}
-.swipe{position:relative;margin-bottom:6px;border-radius:var(--r);overflow:hidden}
+.swipe{position:relative;margin-bottom:6px}
 .swipe .bill{margin:0;transition:transform .2s ease;will-change:transform}
-.swipe-act{position:absolute;inset:0;display:flex;justify-content:flex-end;align-items:stretch;background:var(--peach-soft);border-radius:var(--r)}
-.swipe-del{border:0;background:var(--danger);color:#fff;font-weight:700;font-size:.8rem;width:92px;border-radius:0 var(--r) var(--r) 0}
+.swipe-act{position:absolute;inset:0;display:flex;justify-content:flex-end;align-items:stretch}
+.swipe-del{border:0;background:var(--peach-soft);color:var(--danger);font-weight:700;font-size:.8rem;width:84px;border-radius:var(--r);opacity:0;transition:opacity .15s}
+.swipe.open .swipe-del,.swipe-del:focus{opacity:1}
+.swipe-del.sure{background:var(--danger);color:#fff}
 .swipe-del.sure{font-size:.7rem;padding:0 6px}
 .month{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 2px 6px}
 .share{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line)}
@@ -303,7 +305,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.4.1", BUILD="07/10/2026";
+const VERSION="2.4.2", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -905,16 +907,16 @@ bind.bills=m=>{
     removeBillFromList(b)});
   $$(".swipe",m).forEach(bindSwipe);
 };
-function closeSwipes(except){$$(".swipe.open").forEach(s=>{if(s!==except){s.classList.remove("open");s.querySelector(".bill").style.transform="";const d=s.querySelector(".swipe-del");d.classList.remove("sure");d.textContent=d.dataset.lbl||d.textContent}})}
+function closeSwipes(except){$$(".swipe.open").forEach(s=>{if(s!==except){s.classList.remove("open");s.querySelector(".bill").style.transform="";const d=s.querySelector(".swipe-del");d.style.opacity="";d.classList.remove("sure");d.textContent=d.dataset.lbl||d.textContent}})}
 function bindSwipe(sw){
-  const card=sw.querySelector(".bill"),del=sw.querySelector(".swipe-del");del.dataset.lbl=del.textContent;const W=92;
+  const card=sw.querySelector(".bill"),del=sw.querySelector(".swipe-del");del.dataset.lbl=del.textContent;const W=96;
   let x0=0,y0=0,dx=0,drag=false,lock=null;
   sw.addEventListener("touchstart",e=>{const t=e.touches[0];x0=t.clientX;y0=t.clientY;dx=0;drag=true;lock=null;card.style.transition="none"},{passive:true});
   sw.addEventListener("touchmove",e=>{if(!drag)return;const t=e.touches[0];const mx=t.clientX-x0,my=t.clientY-y0;
     if(lock===null&&(Math.abs(mx)>8||Math.abs(my)>8))lock=Math.abs(mx)>Math.abs(my)?"x":"y";
-    if(lock!=="x")return;e.preventDefault();const base=sw.classList.contains("open")?-W:0;dx=Math.min(0,Math.max(-W-30,base+mx));card.style.transform=`translateX(${dx}px)`},{passive:false});
+    if(lock!=="x")return;e.preventDefault();const base=sw.classList.contains("open")?-W:0;dx=Math.min(0,Math.max(-W-30,base+mx));card.style.transform=`translateX(${dx}px)`;del.style.opacity=Math.min(1,-dx/W)},{passive:false});
   sw.addEventListener("touchend",()=>{if(!drag)return;drag=false;card.style.transition="";if(lock!=="x")return;
-    if(dx<-W/2){closeSwipes(sw);sw.classList.add("open");card.style.transform=`translateX(${-W}px)`}else{sw.classList.remove("open");card.style.transform="";del.classList.remove("sure");del.textContent=del.dataset.lbl}});
+    if(dx<-W/2){closeSwipes(sw);sw.classList.add("open");del.style.opacity="";card.style.transform=`translateX(${-W}px)`}else{sw.classList.remove("open");card.style.transform="";del.style.opacity="";del.classList.remove("sure");del.textContent=del.dataset.lbl}});
 }
 async function removeBillFromList(b){
   if(b.ownerPid===myPid()){const copy={...b};await deleteBill(b);toast("Đã xóa bill",()=>saveBill(copy,[]))}
