@@ -298,7 +298,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.2.0", BUILD="07/10/2026";
+const VERSION="2.3.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -949,7 +949,8 @@ function openBillEditor(id,preset={}){
     <div><span class="lbl">Ai ăn</span>${cand.size>12?`<input class="inp" id="edQ" placeholder="Tìm trong danh bạ" style="margin-bottom:6px">`:""}<div class="chips" id="edPeople"></div>
       <div class="keyrow" style="margin-top:6px"><input class="inp" id="edNew" placeholder="Người mới (lưu vào danh bạ)" maxlength="40"><button class="btn" id="edNewBtn">Thêm</button></div></div>
     <div><span class="lbl">Ai trả tiền</span><div class="chips" id="edPayer"></div></div>
-    <button class="btn block" id="edScanBtn">${ic("camera")} Quét ảnh bill</button><input type="file" accept="image/*" id="edScanFile" hidden><div id="edScan"></div>
+    <div class="grid2"><button class="btn" id="edScanBtn">${ic("camera")} Quét ảnh bill</button><button class="btn" id="edPasteBtn">${ic("copy")} Dán chữ bill</button></div><input type="file" accept="image/*" id="edScanFile" hidden>
+    ${aiReady()?`<label class="switch"><span class="small muted">Đọc ảnh bằng AI (chính xác hơn, tốn phí API)</span><input type="checkbox" id="edAIScan" ${prefs().aiScan?"checked":""}></label>`:""}<div id="edScan"></div>
     <div class="seg" id="edMode"><button data-v="equal">Chia đều</button><button data-v="lines">Gán món</button><button data-v="items">Theo người</button><button data-v="custom">Tự nhập</button></div>
     <div id="edPanel"></div>
     <label class="switch" id="edRoundRow"><span class="small">Làm tròn lên 1.000đ</span><input type="checkbox" id="edRound" ${ed.round?"checked":""}></label>
@@ -1025,18 +1026,71 @@ function openBillEditor(id,preset={}){
       ownerPid:b?b.ownerPid:myPid(),createdAt:b?b.createdAt:now};
     saveBill(bill,b?b.members:[]);closeSheet();toast(b?"Đã lưu":"Đã tạo bill "+fmt(r.total));if(!b)setTimeout(()=>openBillDetail(bill.id,{fresh:true}),150);
   };
-  $("#edScanBtn",el).onclick=()=>{if(!aiReady()){$("#edScan",el).innerHTML=`<p class="hint">Cần API key Claude để đọc ảnh. Nhập trong Cài đặt → API key.</p>`;return}$("#edScanFile",el).click()};
+  const applyReceipt=r=>{
+    const box=$("#edScan",el);
+    if(!r.items.length){box.innerHTML=`<p class="err">Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ; hoặc dùng Dán chữ bill.</p>`;return}
+    if(r.place&&!$("#edPlace",el).value.trim())$("#edPlace",el).value=r.place;
+    if(r.date&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&r.date<=todayISO()&&daysAgo(r.date)<60)$("#edDate",el).value=r.date;
+    ed.lines=r.items.map(it=>({name:it.name,qty:it.qty||1,price:fmtN(it.price),who:[]}));ed.ship=r.ship?fmtN(r.ship):"";ed.svc=r.service?fmtN(r.service):"";ed.disc=r.discount?fmtN(r.discount):"";ed.receiptTotal=r.total||0;
+    ed.mode="lines";drawPanel();
+    box.innerHTML=`<div class="preview small row between"><span>Đọc được <b>${r.items.length} món</b>${r.total?`, tổng <b>${fmt(r.total)}</b>`:""}. Kiểm tra lại tên và giá.</span>${r.total?`<button class="btn sm" id="edEqualAll">Chia đều tổng</button>`:""}</div>`;
+    const eq=$("#edEqualAll",box);if(eq)eq.onclick=()=>{ed.mode="equal";ed.total=fmtN(r.total);drawPanel()};
+  };
+  const ai=$("#edAIScan",el);if(ai)ai.onchange=()=>store("tn2.prefs",{...prefs(),aiScan:ai.checked});
+  $("#edScanBtn",el).onclick=()=>$("#edScanFile",el).click();
+  $("#edPasteBtn",el).onclick=()=>{const box=$("#edScan",el);
+    box.innerHTML=`<div class="stack" style="gap:6px"><textarea class="inp" id="edPasteTxt" rows="5" placeholder="Dán chữ của bill vào đây. Trên iPhone: mở ảnh bill, giữ ngón tay lên chữ, Chọn tất cả, Sao chép."></textarea><button class="btn mint sm" id="edPasteGo" style="align-self:flex-end">Đọc món</button></div>`;
+    $("#edPasteTxt",box).focus();$("#edPasteGo",box).onclick=()=>applyReceipt(parseReceiptText($("#edPasteTxt",box).value))};
   $("#edScanFile",el).onchange=async e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
-    const box=$("#edScan",el);box.innerHTML=`<div class="thinking"><i></i><i></i><i></i> Đang đọc bill, khoảng 5–20 giây…</div>`;
-    try{const r=await scanReceipt(f);
-      if(r.place&&!$("#edPlace",el).value.trim())$("#edPlace",el).value=r.place;
-      if(r.date&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&r.date<=todayISO()&&daysAgo(r.date)<60)$("#edDate",el).value=r.date;
-      ed.lines=r.items.map(it=>({name:it.name,qty:it.qty||1,price:fmtN(it.price),who:[]}));ed.ship=r.ship?fmtN(r.ship):"";ed.svc=r.service?fmtN(r.service):"";ed.disc=r.discount?fmtN(r.discount):"";ed.receiptTotal=r.total||0;
-      ed.mode="lines";drawPanel();
-      box.innerHTML=`<div class="preview small row between"><span>Đọc được <b>${r.items.length} món</b>${r.total?`, tổng <b>${fmt(r.total)}</b>`:""}</span>${r.total?`<button class="btn sm" id="edEqualAll">Chia đều tổng</button>`:""}</div>`;
-      const eq=$("#edEqualAll",box);if(eq)eq.onclick=()=>{ed.mode="equal";ed.total=fmtN(r.total);drawPanel()};
-    }catch(err){box.innerHTML=`<p class="err">${esc(err&&err.code==="no_items"?"Không đọc được món nào. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại.":aiErrText(err))}</p>`}};
+    const box=$("#edScan",el);const useAI=aiReady()&&prefs().aiScan;
+    box.innerHTML=`<div class="thinking"><i></i><i></i><i></i> <span id="edScanMsg">${useAI?"AI đang đọc bill…":ocrWorker?"Đang đọc chữ…":"Lần đầu tải bộ đọc chữ (~5MB, chỉ một lần)…"}</span></div>`;
+    try{
+      if(useAI)applyReceipt(await scanReceipt(f));
+      else{const txt=await ocrImage(f,p=>{const m=$("#edScanMsg",box);if(m)m.textContent="Đang đọc chữ… "+p+"%"});applyReceipt(parseReceiptText(txt))}
+    }catch(err){box.innerHTML=`<p class="err">${esc(err&&err.code==="no_items"?"Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại.":err&&err.code==="ocr_load"?"Không tải được bộ đọc chữ, kiểm tra mạng rồi thử lại.":err&&err.code?aiErrText(err):"Không đọc được ảnh này. Thử ảnh khác hoặc Dán chữ bill.")}</p>`}};
   drawPeople();drawPanel();
+}
+/* --- free receipt reading: on-device OCR (tesseract.js) or pasted text --- */
+function parseReceiptText(text){
+  const out={place:"",date:null,items:[],ship:0,service:0,discount:0,total:0};
+  const priceRe=/(-?\s?\d{1,3}(?:[.,]\d{3})+|-?\d{4,7}|\d{1,4}(?:[.,]\d)?\s?k)\s*(?:đ|₫|vnđ|vnd|d)?\s*$/i;
+  const toNum=s=>{s=s.replace(/\s/g,"").toLowerCase();const neg=s.startsWith("-");s=s.replace("-","");let n=/k$/.test(s)?Math.round(parseFloat(s.replace(",","."))*1000):parseInt(s.replace(/[.,]/g,""),10);return neg?-n:n};
+  const lines=String(text||"").split(/\r?\n/).map(l=>l.replace(/[|_*•·]+/g," ").replace(/\s+/g," ").trim()).filter(Boolean);
+  let totals=[];
+  lines.forEach((raw,i)=>{
+    const n=norm(raw);
+    const dm=raw.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})/);if(dm&&!out.date){out.date=`${dm[3]}-${pad(+dm[2])}-${pad(+dm[1])}`}
+    const pm=raw.match(priceRe);
+    if(!pm){if(!out.place&&i<3&&/[a-zà-ỹ]{2}/i.test(raw)&&!/hoa don|bill|receipt|dia chi|dt:|sdt|tel/.test(n))out.place=raw.slice(0,60);return}
+    const val=toNum(pm[1]);if(!val||Math.abs(val)>50000000)return;
+    const label=n.slice(0,n.length-norm(pm[0]).length);
+    if(/tam tinh|subtotal|tien mat|tien thua|tien khach|khach dua|tra lai|change|cash|chuyen khoan|so luong|sl:/.test(label))return;
+    if(/(^|\s)(tong|total|thanh toan|phai tra|can tra)/.test(label)){totals.push(Math.abs(val));return}
+    if(/giam|khuyen mai|voucher|uu dai|discount|chiet khau|ma km/.test(label)){out.discount+=Math.abs(val);return}
+    if(/phi giao|van chuyen|ship|delivery|giao hang/.test(label)){out.ship+=Math.abs(val);return}
+    if(/phi|vat|thue|phu thu|service|dich vu|dong goi/.test(label)){out.service+=Math.abs(val);return}
+    if(/ngay|gio|ban so|so hd|hoa don|ma don|order|dt|sdt|tel|wifi|ban:/.test(label))return;
+    let name=raw.slice(0,raw.length-pm[0].length).trim();let qty=1;
+    let q=name.match(/^(\d{1,2})\s*[x×*]?\s+(?=\D)/i)||name.match(/^[x×]\s?(\d{1,2})\s+/i);if(q){qty=+q[1];name=name.slice(q[0].length)}
+    q=name.match(/\s[x×]\s?(\d{1,2})$/i);if(q){qty=+q[1];name=name.slice(0,q.index)}
+    name=name.replace(/(\s+[\d.,]+(?:\s?đ)?)+$/,"").replace(/^[\s:.\-–]+|[\s:.\-–]+$/g,"").trim();
+    if(!/[a-zà-ỹ]{2}/i.test(name)||val<=0)return;
+    out.items.push({name:name.slice(0,60),qty,price:val});
+  });
+  if(totals.length)out.total=Math.max(...totals);
+  return out;
+}
+let ocrWorker=null;
+function loadScript(src){return new Promise((ok,no)=>{if(window.Tesseract)return ok();const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>no({code:"ocr_load"});document.head.appendChild(s)})}
+async function ocrImage(file,onProgress){
+  await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js");
+  if(!ocrWorker)ocrWorker=await Tesseract.createWorker("vie",1,{logger:m=>{if(m.status==="recognizing text")onProgress&&onProgress(Math.round(m.progress*100))}});
+  const url=URL.createObjectURL(file);
+  try{const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=url});
+    const k=Math.min(1,2000/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);
+    const x=c.getContext("2d");x.filter="grayscale(1) contrast(1.25)";x.drawImage(img,0,0,c.width,c.height);
+    const {data}=await ocrWorker.recognize(c);return data.text||""}
+  finally{URL.revokeObjectURL(url)}
 }
 async function shrinkImage(file,max=1568){
   const url=URL.createObjectURL(file);
@@ -1459,7 +1513,7 @@ function openGuide(){
     `<div class="mscr"><div class="mcap">Cài đặt → Hồ sơ</div>${row(av("Bảo")+" <b>Bảo</b>","")}<div class="minp">Vietcombank</div><div class="minp">0011 0012 3456 7</div><div class="mline">${hl(ic("qr")+" Xem thử QR")}${mb("Lưu","mint")}</div></div>`],
    ["Thêm người vào danh bạ","Bấm + để thêm, hoặc nút liên kết để gửi link của bạn: ai mở link sẽ có bạn trong danh bạ.",
     `<div class="mscr"><div class="mhead"><b>Danh bạ</b><span>${hl(ic("link"))} ${hl(ic("plus"),"")}</span></div>${row(av("Hà")+" Hà","<span class='pos'>+100k</span>")}${row(av("Minh")+" Minh","")}</div>`],
-   ["Tạo bill","Tab Bill, bấm +. Chọn người ăn, người trả, cách chia. Có API key thì bấm Quét ảnh bill: app đọc từng món để bạn gán cho từng người, hoặc chia đều tổng.",
+   ["Tạo bill","Tab Bill, bấm +. Chọn người ăn, người trả, cách chia. Bấm Quét ảnh bill (miễn phí, đọc ngay trên máy) hoặc Dán chữ bill: app liệt kê từng món để bạn gán cho từng người, hoặc chia đều tổng.",
     `<div class="mscr"><div class="mcap">Ai ăn</div><div class="mline">${mb(av("Tôi")+"Tôi","on")}${mb(av("Hà")+"Hà","on")}${mb(av("Minh")+"Minh","on")}${mb("+ Người mới")}</div>
      <div class="mseg"><span class="on">Chia đều</span><span>Theo món</span><span>Tự nhập</span></div><div class="minp">300k</div>
      <div class="mprev">${row("Tôi · trả","100.000đ")}${row("Hà","100.000đ")}${row("Minh","100.000đ")}</div></div>`],
@@ -1479,7 +1533,7 @@ function openGuide(){
   const el=openSheet("Hướng dẫn",`<div class="stack" style="gap:6px">${G.map(([t,d,pic],i)=>`<details class="card gd" name="guide"${i===0?" open":""}><summary><span class="gnum">${i+1}</span>${t}</summary><div class="gbody"><div class="gx">${pic}</div><p>${d}</p></div></details>`).join("")}
     <p class="hint" style="text-align:center">Mở lại bằng nút ? ở góc trên.</p></div>`);
   const ds=$$("details.gd",el);
-  ds.forEach(d=>d.addEventListener("toggle",()=>{if(d.open){ds.forEach(o=>{if(o!==d)o.open=false});setTimeout(()=>d.scrollIntoView({block:"nearest",behavior:"smooth"}),50)}}));
+  ds.forEach(d=>d.addEventListener("toggle",()=>{if(d.open){ds.forEach(o=>{if(o!==d)o.open=false});setTimeout(()=>d.scrollIntoView&&d.scrollIntoView({block:"nearest",behavior:"smooth"}),50)}}));
 }
 
 /* ---------- links: #b= bill, #p= person, #v= poll ---------- */
