@@ -152,6 +152,11 @@ textarea.inp{resize:vertical;min-height:60px}
 .bill .mid small{display:block;color:var(--muted);font-size:.74rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bill .end{text-align:right;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .bill .end b{font-family:var(--f-head);font-weight:800}
+.swipe{position:relative;margin-bottom:6px;border-radius:var(--r);overflow:hidden}
+.swipe .bill{margin:0;transition:transform .2s ease;will-change:transform}
+.swipe-act{position:absolute;inset:0;display:flex;justify-content:flex-end;align-items:stretch;background:var(--peach-soft);border-radius:var(--r)}
+.swipe-del{border:0;background:var(--danger);color:#fff;font-weight:700;font-size:.8rem;width:92px;border-radius:0 var(--r) var(--r) 0}
+.swipe-del.sure{font-size:.7rem;padding:0 6px}
 .month{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 2px 6px}
 .share{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line)}
 .share:last-child{border-bottom:0}
@@ -298,7 +303,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.4.0", BUILD="07/10/2026";
+const VERSION="2.4.1", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -887,14 +892,34 @@ function viewBills(){
     let right,sub;
     if(v.iPay){right=`<b class="num">${fmtK(b.total)}</b>${v.due?`<span class="badge b-warn">Chờ ${fmtK(v.due)}</span>`:`<span class="badge b-ok">Đủ</span>`}`;sub=`Tôi trả · ${v.paidN}/${v.others.length} đã gửi`}
     else{right=`<b class="num">${v.mine?fmtK(v.mine.amount):"–"}</b>${v.mine?(v.mine.paid?`<span class="badge b-ok">Đã trả</span>`:v.mine.sentAt?`<span class="badge b-sky">Đã báo</span>`:`<span class="badge b-warn">Chưa trả</span>`):""}`;sub=`${esc(dn(v.payer,b))} trả · ${b.people.length} người`}
-    h+=`<button class="bill" data-bill="${b.id}"><span class="dt"><b>${d.getDate()}</b><small>${WD[d.getDay()]}</small></span><span class="mid"><b>${esc(b.placeName||b.title)}</b><small>${sub}</small></span><span class="end">${right}</span></button>`;
+    const own=b.ownerPid===myPid();
+    h+=`<div class="swipe" data-sw="${b.id}"><div class="swipe-act"><button class="swipe-del" data-del="${b.id}">${own?"Xóa":"Ẩn"}</button></div><button class="bill" data-bill="${b.id}"><span class="dt"><b>${d.getDate()}</b><small>${WD[d.getDay()]}</small></span><span class="mid"><b>${esc(b.placeName||b.title)}</b><small>${sub}</small></span><span class="end">${right}</span></button></div>`;
   }
   return h;
 }
 bind.bills=m=>{
   $$("[data-bf]",m).forEach(b=>b.onclick=()=>{ui.billFilter=b.dataset.bf;render()});
-  $$("[data-bill]",m).forEach(b=>b.onclick=()=>openBillDetail(b.dataset.bill));
+  $$("[data-bill]",m).forEach(b=>b.onclick=e=>{const sw=b.closest(".swipe");if(sw&&sw.classList.contains("open")){closeSwipes();return}openBillDetail(b.dataset.bill)});
+  $$("[data-del]",m).forEach(x=>x.onclick=()=>{const id=x.dataset.del;const b=S.bills.find(y=>y.id===id);if(!b)return;
+    if(!x.classList.contains("sure")){x.classList.add("sure");x.textContent=b.ownerPid===myPid()?"Chắc chắn xóa?":"Ẩn khỏi tôi?";return}
+    removeBillFromList(b)});
+  $$(".swipe",m).forEach(bindSwipe);
 };
+function closeSwipes(except){$$(".swipe.open").forEach(s=>{if(s!==except){s.classList.remove("open");s.querySelector(".bill").style.transform="";const d=s.querySelector(".swipe-del");d.classList.remove("sure");d.textContent=d.dataset.lbl||d.textContent}})}
+function bindSwipe(sw){
+  const card=sw.querySelector(".bill"),del=sw.querySelector(".swipe-del");del.dataset.lbl=del.textContent;const W=92;
+  let x0=0,y0=0,dx=0,drag=false,lock=null;
+  sw.addEventListener("touchstart",e=>{const t=e.touches[0];x0=t.clientX;y0=t.clientY;dx=0;drag=true;lock=null;card.style.transition="none"},{passive:true});
+  sw.addEventListener("touchmove",e=>{if(!drag)return;const t=e.touches[0];const mx=t.clientX-x0,my=t.clientY-y0;
+    if(lock===null&&(Math.abs(mx)>8||Math.abs(my)>8))lock=Math.abs(mx)>Math.abs(my)?"x":"y";
+    if(lock!=="x")return;e.preventDefault();const base=sw.classList.contains("open")?-W:0;dx=Math.min(0,Math.max(-W-30,base+mx));card.style.transform=`translateX(${dx}px)`},{passive:false});
+  sw.addEventListener("touchend",()=>{if(!drag)return;drag=false;card.style.transition="";if(lock!=="x")return;
+    if(dx<-W/2){closeSwipes(sw);sw.classList.add("open");card.style.transform=`translateX(${-W}px)`}else{sw.classList.remove("open");card.style.transform="";del.classList.remove("sure");del.textContent=del.dataset.lbl}});
+}
+async function removeBillFromList(b){
+  if(b.ownerPid===myPid()){const copy={...b};await deleteBill(b);toast("Đã xóa bill",()=>saveBill(copy,[]))}
+  else{S.bills=S.bills.filter(x=>x.id!==b.id);schedule();W(deleteDoc(D("profiles",myPid(),"bills",b.id)));toast("Đã ẩn bill khỏi danh sách của bạn")}
+}
 
 /* --- split maths --- */
 function calc(ed){
