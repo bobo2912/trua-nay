@@ -242,6 +242,10 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .ln .inp{min-height:32px;padding:4px 8px;background:var(--surface)}
 .chip.mini{min-height:24px;padding:2px 9px;font-size:.74rem;background:var(--surface)}
 .chip.mini[aria-pressed="true"]{background:var(--mint);color:var(--mint-ink)}
+.su-dots{display:flex;align-items:center;gap:5px}
+.su-dots i{width:22px;height:5px;border-radius:3px;background:var(--line)}
+.su-dots i.on{background:var(--mint)}.su-dots i.done{background:var(--mint-soft)}
+.su-dots span{margin-left:auto}
 /* guide: mock UI built from the app's own tokens */
 .gd{padding:0}
 .gd summary{list-style:none;display:flex;align-items:center;gap:10px;padding:11px 12px;font-family:var(--f-head);font-weight:800;cursor:pointer}
@@ -307,7 +311,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.4.4", BUILD="07/10/2026";
+const VERSION="2.5.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -525,7 +529,7 @@ function renderOnboard(err){
   $("#obGo").onclick=async e=>{const n=$("#obName").value.trim();if(!n){$("#obName").focus();return}e.target.disabled=true;e.target.textContent="Đang tạo…";
     const me={pid:newCode(20),secret:newCode(28)};
     try{await setDoc(D("keys",me.pid),{secret:me.secret,uids:arrayUnion(S.uid)});await setDoc(D("profiles",me.pid),{name:n,phone:"",bank:null,createdAt:new Date().toISOString()});
-      S.me=me;store("tn2.id",me);ui.tab="eat";startApp()}
+      S.me=me;store("tn2.id",me);ui.tab="eat";ui.newUser=true;startApp()}
     catch(err){e.target.disabled=false;e.target.textContent="Bắt đầu";toast("Không tạo được hồ sơ ("+((err&&err.code)||"lỗi")+").")}};
   $("#obRestore").onclick=async e=>{const raw=$("#obCode").value.trim().replace(/^.*#me=/,"");const [pid,secret]=raw.split(".");const er=$("#obErr");
     if(!pid||!secret||pid.length<16){er.textContent="Mã chưa đúng dạng.";er.hidden=false;return}
@@ -543,8 +547,12 @@ function startApp(){
   live(C("profiles",me,"contacts"),s=>{S.contacts=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.contacts=true;loadCards();schedule()});
   live(C("profiles",me,"places"),s=>{S.places=s.docs.map(x=>({id:x.id,...x.data()}));schedule()});
   live(query(C("profiles",me,"bills"),where("date",">=",since(400))),s=>{S.bills=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.bills=true;syncLinks();schedule()});
+  const hadLink=!!pendingHash;
   $(".tabs").hidden=false;render();handleHash();checkUpdate();
-  if(!recall("tn2.guided",false)&&!location.hash){store("tn2.guided",true);setTimeout(()=>{if(!$("#sheetRoot").firstChild)openGuide()},400)}
+  const guide=()=>{if(!recall("tn2.guided",false)){store("tn2.guided",true);if(!$("#sheetRoot").firstChild)openGuide()}};
+  if(ui.newUser&&!hadLink){ui.newUser=false;setTimeout(()=>openSetup(0,guide),400)}
+  else if(ui.newUser){ui.newUser=false}
+  else if(!location.hash)setTimeout(guide,400);
 }
 async function loadCards(){
   for(const c of S.contacts){if(c.pid&&!(c.pid in S.cards)){S.cards[c.pid]=null;try{const s=await getDoc(D("profiles",c.pid));S.cards[c.pid]=s.exists()?s.data():{}}catch(e){S.cards[c.pid]={}}schedule()}}
@@ -594,10 +602,13 @@ function viewEat(){
   const head=`<div class="hello"><div><h2>Trưa nay ăn gì?</h2><p>${lb?`Lần trước: ${esc(lb.placeName||lb.title)}, ${esc(dLong(lb.date).toLowerCase())}`:"Quay số, hỏi AI hoặc rủ cả nhóm bình chọn"}</p></div></div>`;
   const views=[["spin","Quay số"],["ai","Gợi ý"],["near","Gần đây"],["vote","Bình chọn"]];
   const sub=`<div class="seg" style="margin-top:10px">${views.map(([k,l])=>`<button data-ev="${k}" aria-pressed="${ui.eatView===k}">${l}</button>`).join("")}</div>`;
-  return head+sub+`<div style="margin-top:10px">${({spin:eatSpin,ai:eatAI,near:eatNear,vote:eatVote})[ui.eatView]()}</div>`;
+  const n=setupDone();const card=n<4&&!recall("tn2.setupLater",false)?`<div class="card row between" style="margin-top:10px"><span class="small"><b>Hoàn tất thiết lập</b> · ${n}/4<br><span class="muted">Ngân hàng, Zalo, địa chỉ, sở thích</span></span><span class="row"><button class="btn sm ghost" id="suHide">Để sau</button><button class="btn sm mint" id="suGo">Tiếp tục</button></span></div>`:"";
+  return head+card+sub+`<div style="margin-top:10px">${({spin:eatSpin,ai:eatAI,near:eatNear,vote:eatVote})[ui.eatView]()}</div>`;
 }
 bind.eat=m=>{
   $$("[data-ev]",m).forEach(b=>b.onclick=()=>{ui.eatView=b.dataset.ev;render()});
+  const sg=$("#suGo",m);if(sg)sg.onclick=()=>{const st=setupState();openSetup(["bank","phone","area","likes"].findIndex(k=>!st[k]))};
+  const sh=$("#suHide",m);if(sh)sh.onclick=()=>{store("tn2.setupLater",true);render()};
   $$("[data-goto]",m).forEach(b=>b.onclick=()=>go(b.dataset.goto));
   $$("[data-newpoll]",m).forEach(b=>b.onclick=()=>openPollEditor(b.dataset.newpoll?[{name:b.dataset.newpoll,placeId:b.dataset.pid||null}]:[]));
   $$("[data-eatnow]",m).forEach(b=>b.onclick=()=>openBillEditor(null,{placeName:b.dataset.eatnow}));
@@ -649,7 +660,7 @@ function bindSpin(m){
 }
 function doSpin(){
   const {src,pool}=spinPool();if(!pool.length)return;
-  const le=lastEaten();const w=pool.map(p=>src==="places"&&daysAgo(placeLast(p,le))>=14?2:1);
+  const le=lastEaten();const likes=S.priv.likes||[];const w=pool.map(p=>(src==="places"&&daysAgo(placeLast(p,le))>=14?2:1)*((p.tags||[]).some(t=>likes.includes(t))?2:1));
   let r=Math.random()*sum(w),win=pool[pool.length-1];for(let i=0;i<pool.length;i++){r-=w[i];if(r<=0){win=pool[i];break}}
   const el=$("#reelText"),meta=$("#reelMeta"),btn=$("#spinBtn");
   const finish=()=>{ui.spinning=false;ui.spinResult={src,id:win.id,name:win.name,tags:win.tags||[]};render()};
@@ -696,7 +707,7 @@ function bindAI(m){
 }
 function groupContext(){
   const le=lastEaten();const d=new Date();
-  return {thoi_gian:WDL[d.getDay()]+" "+dLabel(todayISO())+" "+pad(d.getHours())+":"+pad(d.getMinutes()),khu_vuc:cfg().area||"chưa nhập",
+  return {thoi_gian:WDL[d.getDay()]+" "+dLabel(todayISO())+" "+pad(d.getHours())+":"+pad(d.getMinutes()),khu_vuc:cfg().area||"chưa nhập",so_thich:(S.priv.likes||[]).map(t=>TAGS[t]),khong_an_duoc:S.priv.dislikes||"",
     quan_hay_an:places().map(p=>({id:p.id,ten:p.name,loai:(p.tags||[]).map(t=>TAGS[t]),gia:PRICE[p.price]||"",an_lan_cuoi:agoTxt(daysAgo(placeLast(p,le))),ghi_chu:p.note||""})).slice(0,80),
     bua_gan_day:billsSorted().slice(0,10).map(b=>({ngay:dLong(b.date),quan:b.placeName||b.title,moi_suat:Math.round(b.total/((b.shares||[]).length||1))}))};
 }
@@ -712,6 +723,7 @@ Mong muốn: ${want}
 
 Gợi ý 4 lựa chọn. Quy tắc:
 - Ưu tiên quán trong "quan_hay_an", ghi đúng "id" vào placeId.
+- Ưu tiên loại món trong "so_thich"; tuyệt đối tránh món có thứ trong "khong_an_duoc".
 - Tránh quán vừa ăn 1-3 ngày; nếu ăn lặp một loại món thì đổi loại khác.
 - Tối đa 2 gợi ý ngoài danh sách (placeId null): chỉ nêu món, hoặc tên quán nổi tiếng bạn khá chắc có thật ở khu vực; không bịa địa chỉ.
 - "why" tiếng Việt, dưới 15 từ.
@@ -1412,6 +1424,7 @@ function viewSettings(){
     ${row("sArea","Địa chỉ / khu vực",esc(c.area||"Chưa nhập"))}
     <label class="li switch"><span class="mid"><b>Dùng định vị</b><small>Tìm quán gần vị trí hiện tại</small></span><input type="checkbox" id="sLoc" ${pr.useLoc?"checked":""}></label>
     ${row("sPlaces","Quán hay ăn",places().length+" quán")}
+    ${row("sLikes","Sở thích món ăn",esc((S.priv.likes||[]).map(t=>TAGS[t]).join(", ")||"Chưa chọn"))}
     ${row("sAvoid","Tránh lặp quán",c.avoidDays+" ngày")}</div>
   <div class="sec"><h2>Nhắc nợ</h2></div><div class="set">${row("sRemind","Lịch nhắc",`Sau ${c.remindAfter} ngày, lặp lại mỗi ${c.remindEvery} ngày`)}</div>
   <div class="sec"><h2>AI</h2></div><div class="set">${row("sAI","API key Claude",ai.key?"Đã nhập · "+esc((AI_MODELS.find(m=>m[0]===ai.model)||AI_MODELS[0])[1])+(ai.web?" · tìm web":""):"Chưa nhập · chỉ lưu trên máy này")}</div>
@@ -1428,6 +1441,7 @@ bind.settings=m=>{
   $("#sArea",m).onclick=()=>miniForm("Địa chỉ / khu vực",`<input class="inp" id="mf" value="${esc(cfg().area)}" placeholder="Vd: 54 Liễu Giai, Ba Đình, Hà Nội" maxlength="100">`,el=>savePriv({area:$("#mf",el).value.trim()}));
   $("#sLoc",m).onchange=e=>{store("tn2.prefs",{...prefs(),useLoc:e.target.checked});if(e.target.checked){ui.pos=null;ui.posErr="";locate()}};
   $("#sPlaces",m).onclick=openPlaces;
+  $("#sLikes",m).onclick=()=>openSetup(3);
   $("#sAvoid",m).onclick=()=>miniForm("Tránh lặp quán",`<label class="lbl" for="mf">Không quay trúng quán đã ăn trong (ngày)</label><input class="inp num" id="mf" type="number" min="0" max="14" value="${cfg().avoidDays}">`,el=>savePriv({avoidDays:clamp($("#mf",el).value,3,0,14)}));
   $("#sRemind",m).onclick=()=>miniForm("Lịch nhắc nợ",`<div class="grid2"><div class="field"><label class="lbl" for="mf1">Nhắc sau (ngày)</label><input class="inp num" id="mf1" type="number" min="0" max="30" value="${cfg().remindAfter}"></div><div class="field"><label class="lbl" for="mf2">Lặp lại mỗi (ngày)</label><input class="inp num" id="mf2" type="number" min="1" max="30" value="${cfg().remindEvery}"></div></div>`,el=>savePriv({remindAfter:clamp($("#mf1",el).value,2,0,30),remindEvery:clamp($("#mf2",el).value,2,1,30)}));
   $("#sAI",m).onclick=openAISettings;
@@ -1453,6 +1467,42 @@ function openProfile(){
   $("#pfSave",el).onclick=()=>{const name=$("#pfName",el).value.trim();const b=readBank("pf",el);const e=$("#pfErr",el);
     if(!name){e.textContent="Nhập tên.";e.hidden=false;return}if(b===false){e.textContent="Chọn ngân hàng và nhập đủ số tài khoản, hoặc để trống.";e.hidden=false;return}
     saveCard({name,phone:$("#pfPhone",el).value.replace(/[^\d]/g,""),bank:b});closeSheet();toast("Đã lưu hồ sơ")};
+}
+/* ---------- first-run setup: bank, Zalo, office address, food tastes ---------- */
+function setupState(){return {bank:!!S.card.bank,phone:!!S.card.phone,area:!!cfg().area,likes:!!((S.priv.likes||[]).length||S.priv.dislikes)}}
+const setupDone=()=>Object.values(setupState()).filter(Boolean).length;
+function openSetup(start=0,after){
+  const dr={bank:{...(S.card.bank||{})},phone:S.card.phone||"",area:cfg().area||"",useLoc:prefs().useLoc,likes:[...(S.priv.likes||[])],dislikes:S.priv.dislikes||""};
+  const steps=[
+    {t:"Tài khoản nhận tiền",d:"Để bạn bè quét QR trả tiền cho bạn.",body:()=>`<div class="stack">${bankFields("su",dr.bank)}<div class="row"><button class="btn sm" id="suTest">${ic("qr")} Xem thử QR</button><span class="hint" style="margin:0">Quét bằng app ngân hàng, xem tên đúng chưa</span></div><div id="suQR"></div></div>`,
+     save:el=>{const b=readBank("su",el);if(b===false)return"Chọn ngân hàng và nhập đủ số tài khoản, hoặc bấm Bỏ qua.";dr.bank=b||{};if(b)saveCard({bank:b})}},
+    {t:"Số Zalo",d:"Để bạn bè mở chat Zalo với bạn ngay trong app.",body:()=>`<input class="inp num" id="suPhone" inputmode="tel" maxlength="15" placeholder="Vd: 0912345678" value="${esc(dr.phone)}" aria-label="Số Zalo">`,
+     save:el=>{const p=$("#suPhone",el).value.replace(/[^\d]/g,"");if(p&&p.length<9)return"Số điện thoại chưa đủ.";dr.phone=p;if(p)saveCard({phone:p})}},
+    {t:"Địa chỉ văn phòng",d:"Để tìm quán ăn gần chỗ bạn làm.",body:()=>`<div class="stack"><input class="inp" id="suArea" maxlength="100" placeholder="Vd: 54 Liễu Giai, Ba Đình, Hà Nội" value="${esc(dr.area)}" aria-label="Địa chỉ văn phòng">
+      <label class="switch"><span class="small">Dùng định vị khi tìm quán gần</span><input type="checkbox" id="suLoc" ${dr.useLoc?"checked":""}></label></div>`,
+     save:el=>{dr.area=$("#suArea",el).value.trim();dr.useLoc=$("#suLoc",el).checked;store("tn2.prefs",{...prefs(),useLoc:dr.useLoc});if(dr.area)savePriv({area:dr.area})}},
+    {t:"Bạn thích ăn gì?",d:"App ưu tiên những món này khi quay số và gợi ý.",body:()=>`<div class="stack"><div class="chips" id="suLikes">${Object.entries(TAGS).map(([k,v])=>`<button class="chip" data-v="${k}" aria-pressed="${dr.likes.includes(k)}">${v}</button>`).join("")}</div>
+      <input class="inp" id="suDis" maxlength="80" placeholder="Không ăn được (không bắt buộc), vd: hành, hải sản" value="${esc(dr.dislikes)}" aria-label="Không ăn được"></div>`,
+     save:el=>{dr.dislikes=$("#suDis",el).value.trim();savePriv({likes:dr.likes,dislikes:dr.dislikes})}}
+  ];
+  let i=start;
+  const el=openSheet("Thiết lập","");
+  const draw=()=>{const s=steps[i];
+    el.innerHTML=`<div class="stack">
+      <div class="su-dots">${steps.map((_,j)=>`<i class="${j<i?"done":j===i?"on":""}"></i>`).join("")}<span class="small muted">${i+1}/${steps.length}</span></div>
+      <div><h3 style="font-size:1.15rem">${s.t}</h3><p class="small muted" style="margin:2px 0 0">${s.d}</p></div>
+      ${s.body()}<p class="err" id="suErr" hidden></p>
+      <div class="grid2"><button class="btn" id="suSkip">${i>0?"Quay lại":"Bỏ qua"}</button><button class="btn mint" id="suNext">${i<steps.length-1?"Tiếp":"Xong"}</button></div>
+      ${i>0?`<button class="btn ghost sm" id="suLater" style="align-self:center">Bỏ qua bước này</button>`:""}</div>`;
+    const t=$("#suTest",el);if(t)t.onclick=()=>{const b=readBank("su",el);const box=$("#suQR",el);if(!b){box.innerHTML=`<p class="err">Chọn ngân hàng và nhập số tài khoản.</p>`;return}
+      const c=document.createElement("canvas");c.width=c.height=260;drawQR(c.getContext("2d"),vietqr(b.bin,b.acc,0,"TEST TRUA NAY"),0,0,260);box.innerHTML=`<img class="qrimg" style="max-width:180px" alt="QR thử" src="${c.toDataURL()}">`};
+    $$("#suLikes [data-v]",el).forEach(b=>b.onclick=()=>{const v=b.dataset.v;dr.likes=dr.likes.includes(v)?dr.likes.filter(x=>x!==v):[...dr.likes,v];b.setAttribute("aria-pressed",dr.likes.includes(v))});
+    const next=()=>{if(i<steps.length-1){i++;draw()}else{closeSheet();toast("Xong! Bấm ? ở góc trên để xem hướng dẫn.");after&&setTimeout(after,300)}};
+    $("#suNext",el).onclick=()=>{const er=steps[i].save(el);if(er){const e=$("#suErr",el);e.textContent=er;e.hidden=false;return}next()};
+    $("#suSkip",el).onclick=()=>{if(i>0){i--;draw()}else next()};
+    const l=$("#suLater",el);if(l)l.onclick=next;
+  };
+  draw();
 }
 function openAISettings(){
   const ai=aiCfg();
