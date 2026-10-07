@@ -227,6 +227,51 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .onb{max-width:420px;margin:10vh auto 0;display:flex;flex-direction:column;gap:12px}
 .onb h2{font-size:1.5rem;font-weight:900}
 .keyrow{display:flex;gap:6px}.keyrow .inp{flex:1;min-width:0}
+/* guide: mock UI built from the app's own tokens */
+.gd{padding:0}
+.gd summary{list-style:none;display:flex;align-items:center;gap:10px;padding:11px 12px;font-family:var(--f-head);font-weight:800;cursor:pointer}
+.gd summary::-webkit-details-marker{display:none}
+.gd summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .15s}
+.gd[open] summary::after{transform:rotate(-135deg)}
+.gnum{width:22px;height:22px;border-radius:50%;background:var(--mint-soft);color:var(--ok);display:grid;place-items:center;font-size:.72rem;flex:none}
+.gbody{padding:0 12px 12px}
+.gbody p{margin:8px 2px 0;font-size:.82rem;line-height:1.5}
+.gx{background:var(--lilac-soft);border-radius:12px;padding:12px;display:flex;justify-content:center;overflow-x:auto}
+.mscr{background:var(--surface);border-radius:10px;padding:8px;box-shadow:var(--shadow);font-size:.72rem;display:flex;flex-direction:column;gap:5px;min-width:0;flex:1;max-width:260px}
+.mscr.mc{align-items:center;justify-content:center;flex:none;gap:3px}
+.mscr small{font-size:.62rem;color:var(--muted)}
+.mcap{font-size:.62rem;color:var(--muted);font-weight:600}
+.mhead{display:flex;justify-content:space-between;align-items:center}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.mrow > span{display:flex;align-items:center;gap:5px}
+.mline{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.mb{display:inline-flex;align-items:center;gap:3px;background:var(--surface-2);border-radius:999px;padding:3px 8px;font-size:.66rem;font-weight:600;white-space:nowrap}
+.mb svg{width:11px;height:11px}
+.mb.on,.mb.mint{background:var(--mint);color:var(--mint-ink)}
+.hl{box-shadow:0 0 0 2px var(--peach);animation:pulse 1.6s ease-in-out infinite}
+.mspin.hl{box-shadow:none}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 2px var(--peach)}50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--peach) 40%,transparent)}}
+.minp{border:1px solid var(--line);border-radius:7px;padding:4px 7px;color:var(--muted)}
+.mseg{display:flex;background:var(--surface-2);border-radius:7px;padding:2px;gap:2px}
+.mseg span{flex:1;text-align:center;padding:3px 2px;border-radius:5px;font-size:.6rem;color:var(--muted);font-weight:600}
+.mseg span.on{background:var(--surface);color:var(--ink)}
+.mprev{background:var(--surface-2);border-radius:7px;padding:5px 7px}
+.mflow{display:flex;align-items:center;gap:4px;width:100%;justify-content:center}
+.mflow.two{align-items:stretch;gap:8px}
+.marr{color:var(--muted);flex:none}.marr svg{width:14px;height:14px}
+.mzalo{background:var(--sky-soft)}
+.mbub{background:var(--surface);border-radius:8px;padding:5px 7px;font-size:.62rem;line-height:1.3}
+.mqr{display:grid;place-items:center;background:var(--surface-2);border-radius:8px;padding:6px}.mqr svg{width:34px;height:34px}
+.mbadge{border-radius:999px;padding:1px 6px;font-size:.6rem;font-weight:600;background:var(--surface-2);color:var(--muted)}
+.mbadge.warn{background:var(--peach-soft);color:var(--warn)}.mbadge.sky{background:var(--sky-soft);color:var(--sky-ink)}
+.msum{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.msum span{border-radius:7px;padding:4px 6px;font-size:.6rem;color:var(--muted)}
+.msum b{font-family:var(--f-head);color:var(--ink);font-size:.8rem}
+.msum .in{background:var(--mint-soft)}.msum .out{background:var(--peach-soft)}
+.mreel{text-align:center;font-family:var(--f-head);font-weight:900;color:var(--warn);font-size:.95rem;padding:8px 0;border-bottom:2px dashed var(--line)}
+.mspin{text-align:center;background:var(--peach);color:var(--peach-ink);border-radius:8px;padding:5px;font-weight:800;font-family:var(--f-head)}
+.mico{width:34px;height:34px;border-radius:9px}
+.av.sm{width:16px;height:16px;font-size:.48rem}
 @media (max-width:360px){.grid2,.sum2{grid-template-columns:1fr}.fees{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -247,7 +292,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.1.0", BUILD="07/10/2026";
+const VERSION="2.1.1", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -1334,19 +1379,38 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 
 /* ---------- guide ---------- */
 function openGuide(){
+  // tiny mock-UI pieces drawn from the app's own tokens
+  const mb=(t,cls="")=>`<span class="mb ${cls}">${t}</span>`;
+  const hl=t=>mb(t,"hl");
+  const av=n=>avatar(n,"sm");
+  const row=(l,r,cls="")=>`<div class="mrow ${cls}"><span>${l}</span><span>${r}</span></div>`;
+  const arrow=`<span class="marr">${ic("right")}</span>`;
   const G=[
-   ["Bắt đầu","Vào <b>Cài đặt → Hồ sơ</b>, nhập số Zalo và tài khoản ngân hàng. Bấm <b>Xem thử QR</b>, quét bằng app ngân hàng để chắc tên hiện đúng. Có tài khoản thì người khác mới quét QR trả bạn được."],
-   ["Thêm người vào danh bạ","Tab <b>Danh bạ</b>, bấm <b>+</b> và nhập tên, số Zalo. Hoặc bấm nút liên kết để gửi <b>link của bạn</b>: ai mở link sẽ thêm bạn vào danh bạ của họ, hai bên tự liên kết."],
-   ["Tạo bill","Tab <b>Bill</b>, bấm <b>+</b>. Nhập quán, chọn <b>Ai ăn</b> (người chưa có thì gõ tên ở ô Người mới), chọn <b>Ai trả tiền</b>. Chia đều thì nhập tổng; theo món thì nhập giá từng người, gõ <b>45</b> nghĩa là 45.000đ, nhiều món gõ <b>45k+15k</b>. Phí giao và giảm giá được chia theo tỷ lệ."],
-   ["Mời người vào bill","Mở bill, bấm <b>Gửi bill cho mọi người</b> rồi chọn nhóm Zalo. Mỗi người mở link, bấm <b>Là tôi</b> ở dòng tên mình. Từ đó bill hiện trong app của họ, các bill sau có tên họ cũng tự hiện."],
-   ["Thu và trả tiền","Người trả tiền: bấm <b>QR</b> ở từng người, hoặc <b>Ảnh QR cả nhóm</b> để gửi một ảnh cho cả nhóm. Người nợ: bấm <b>QR trả</b>, quét bằng app ngân hàng, rồi bấm <b>Tôi đã chuyển</b>. Người trả tiền thấy báo, kiểm tra tài khoản và bấm <b>Đã nhận</b>."],
-   ["Công nợ","Tab <b>Công nợ</b> gom theo người: <b>Nợ tôi</b> và <b>Tôi nợ</b>, bấm vào để xem từng bill. Người nợ quá hạn có nhãn <b>Cần nhắc</b>: bấm <b>Nhắc kèm QR</b> để gửi một QR gộp tất cả các bữa. Lịch nhắc chỉnh ở Cài đặt."],
-   ["Trưa nay ăn gì","<b>Quay số</b> trong quán hay ăn (thêm ở Cài đặt) hoặc danh sách món. <b>Gợi ý</b>: AI chọn theo thời tiết, ngân sách, lịch sử. <b>Gần đây</b>: mở Google Maps hoặc AI tìm quán quanh vị trí. <b>Bình chọn</b>: tạo rồi gửi link, mọi người vote, bấm Chốt rồi Tạo bill."],
-   ["AI và chi phí","AI dùng API key Claude của chính bạn (Cài đặt → API key), key chỉ lưu trên máy này. Gợi ý món khoảng 100–300đ/lần; tìm quán trên web khoảng 2.000–4.000đ/lần."],
-   ["Cài lên màn hình chính","iPhone: Safari → Chia sẻ → <b>Thêm vào MH chính</b>. Lần đầu mở từ icon, app hỏi <b>mã khôi phục</b>: lấy ở Cài đặt → Mã khôi phục trong Safari. Dùng mã này cả khi đổi điện thoại."]
+   ["Bắt đầu","Nhập số Zalo và tài khoản ngân hàng để người khác quét QR trả bạn.",
+    `<div class="mscr"><div class="mcap">Cài đặt → Hồ sơ</div>${row(av("Bảo")+" <b>Bảo</b>","")}<div class="minp">Vietcombank</div><div class="minp">0011 0012 3456 7</div><div class="mline">${hl(ic("qr")+" Xem thử QR")}${mb("Lưu","mint")}</div></div>`],
+   ["Thêm người vào danh bạ","Bấm + để thêm, hoặc nút liên kết để gửi link của bạn: ai mở link sẽ có bạn trong danh bạ.",
+    `<div class="mscr"><div class="mhead"><b>Danh bạ</b><span>${hl(ic("link"))} ${hl(ic("plus"),"")}</span></div>${row(av("Hà")+" Hà","<span class='pos'>+100k</span>")}${row(av("Minh")+" Minh","")}</div>`],
+   ["Tạo bill","Tab Bill, bấm +. Chọn người ăn, người trả, cách chia. Gõ 45 nghĩa là 45.000đ, nhiều món gõ 45k+15k.",
+    `<div class="mscr"><div class="mcap">Ai ăn</div><div class="mline">${mb(av("Tôi")+"Tôi","on")}${mb(av("Hà")+"Hà","on")}${mb(av("Minh")+"Minh","on")}${mb("+ Người mới")}</div>
+     <div class="mseg"><span class="on">Chia đều</span><span>Theo món</span><span>Tự nhập</span></div><div class="minp">300k</div>
+     <div class="mprev">${row("Tôi · trả","100.000đ")}${row("Hà","100.000đ")}${row("Minh","100.000đ")}</div></div>`],
+   ["Mời người vào bill","Gửi link bill vào Zalo. Mỗi người mở link, bấm Là tôi. Từ đó bill tự hiện trong app của họ.",
+    `<div class="mflow"><div class="mscr">${hl(ic("send")+" Gửi bill")}</div>${arrow}<div class="mscr mzalo"><span class="mbub">Bún chả 07/10… <u>trua-nay/#b=…</u></span></div>${arrow}<div class="mscr">${row(av("Hà")+" Hà","")}${hl("Là tôi")}</div></div>`],
+   ["Thu và trả tiền","Người nợ quét QR, bấm Tôi đã chuyển. Người trả kiểm tra tài khoản rồi bấm Đã nhận.",
+    `<div class="mflow two"><div class="mscr"><div class="mcap">Người nợ</div><div class="mqr">${ic("qr")}</div><div class="mline">${mb("QR trả")}${hl("Tôi đã chuyển")}</div></div><div class="mscr"><div class="mcap">Người trả</div>${row(av("Hà")+" Hà","<span class='mbadge sky'>Báo đã chuyển</span>")}<div class="mline">${hl(ic("check")+" Đã nhận")}</div></div></div>`],
+   ["Công nợ","Gom theo người, hai chiều. Ai quá hạn có nhãn Cần nhắc: gửi một QR gộp mọi bữa.",
+    `<div class="mscr"><div class="msum"><span class="in">Nợ tôi<br><b>200.000đ</b></span><span class="out">Tôi nợ<br><b>0đ</b></span></div>${row(av("Minh")+" Minh · 3 bữa","<b class='pos'>150.000đ</b>")}<div class="mline"><span class="mbadge warn">Cần nhắc</span>${hl(ic("send")+" Nhắc kèm QR")}${mb("Đã nhận đủ","mint")}</div></div>`],
+   ["Trưa nay ăn gì","Quay số, hỏi AI, tìm quán gần vị trí, hoặc gửi link bình chọn rồi Chốt và Tạo bill.",
+    `<div class="mscr"><div class="mseg"><span class="on">Quay số</span><span>Gợi ý</span><span>Gần đây</span><span>Bình chọn</span></div><div class="mreel">Bún chả Hàng Quạt</div><div class="mspin hl">Quay</div></div>`],
+   ["AI và chi phí","Dán API key Claude của bạn trong Cài đặt. Key chỉ ở trên máy này, tiền tính vào tài khoản của bạn.",
+    `<div class="mscr"><div class="mcap">Cài đặt → API key Claude</div><div class="minp">sk-ant-••••••••</div><div class="mline"><span class="mbadge">Gợi ý ~100–300đ</span><span class="mbadge">Tìm web ~2–4k</span></div></div>`],
+   ["Cài lên màn hình chính","Safari → Chia sẻ → Thêm vào MH chính. Lần đầu mở từ icon, dán mã khôi phục lấy trong Cài đặt.",
+    `<div class="mflow"><div class="mscr mc">${hl(ic("send"))}<small>Chia sẻ</small></div>${arrow}<div class="mscr mc">${mb("Thêm vào MH chính")}</div>${arrow}<div class="mscr mc"><img src="icons/icon-192.png" alt="" class="mico"><small>Trưa Nay</small></div></div>`]
   ];
-  openSheet("Hướng dẫn",`<div class="stack" style="gap:6px">${G.map(([t,b],i)=>`<details class="card"${i===0?" open":""}><summary style="font-weight:700;cursor:pointer;font-family:var(--f-head)">${i+1}. ${t}</summary><p class="small" style="margin:8px 0 2px;line-height:1.55">${b}</p></details>`).join("")}
-    <p class="hint" style="text-align:center">Mở lại hướng dẫn bằng nút ? ở góc trên.</p></div>`);
+  const el=openSheet("Hướng dẫn",`<div class="stack" style="gap:6px">${G.map(([t,d,pic],i)=>`<details class="card gd" name="guide"${i===0?" open":""}><summary><span class="gnum">${i+1}</span>${t}</summary><div class="gbody"><div class="gx">${pic}</div><p>${d}</p></div></details>`).join("")}
+    <p class="hint" style="text-align:center">Mở lại bằng nút ? ở góc trên.</p></div>`);
+  const ds=$$("details.gd",el);
+  ds.forEach(d=>d.addEventListener("toggle",()=>{if(d.open){ds.forEach(o=>{if(o!==d)o.open=false});setTimeout(()=>d.scrollIntoView({block:"nearest",behavior:"smooth"}),50)}}));
 }
 
 /* ---------- links: #b= bill, #p= person, #v= poll ---------- */
