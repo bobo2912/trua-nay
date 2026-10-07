@@ -298,7 +298,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.3.0", BUILD="07/10/2026";
+const VERSION="2.4.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -940,7 +940,7 @@ function openBillEditor(id,preset={}){
   const ed=b?{id:b.id,placeName:b.placeName||"",date:b.date,platform:b.platform||"quan",payer:b.payer,sel:(b.people||[]).map(p=>p.key),mode:b.mode,total:b.mode==="equal"?fmtN(b.total):"",items:Object.fromEntries((b.shares||[]).map(s=>[s.key,s.items||""])),ship:b.fees?fmtN(b.fees.ship):"",svc:b.fees?fmtN(b.fees.svc):"",disc:b.fees?fmtN(b.fees.disc):"",round:!!b.round}
     :{id:null,placeName:preset.placeName||"",date:todayISO(),platform:"quan",payer:me,sel:[me,...(preset.people||[]).map(p=>p.key)],mode:"equal",total:"",items:{},ship:"",svc:"",disc:"",round:true};
   ed.sel=[...new Set(ed.sel)];
-  ed.lines=b&&b.lines?b.lines.map(l=>({name:l.name,qty:l.qty||1,price:fmtN(l.price),who:[...(l.who||[])]})):[];ed.receiptTotal=b?b.receiptTotal||0:0;
+  ed.lines=b&&b.lines?b.lines.map(l=>({name:l.name,qty:l.qty||1,price:fmtN(l.price),who:[...(l.who||[])]})):[];ed.receiptTotal=b?b.receiptTotal||0:0;ed.totalTouched=!!b;ed.scanMsg="";
   let q="";
   const el=openSheet(b?"Sửa bill":"Bill mới",`<div class="stack">
     <div class="grid2"><div class="field" style="grid-column:1/-1"><input class="inp" id="edPlace" list="plList" value="${esc(ed.placeName)}" placeholder="Quán / món" maxlength="60" autocomplete="off" aria-label="Quán"><datalist id="plList">${places().map(p=>`<option value="${esc(p.name)}"></option>`).join("")}</datalist></div>
@@ -949,9 +949,8 @@ function openBillEditor(id,preset={}){
     <div><span class="lbl">Ai ăn</span>${cand.size>12?`<input class="inp" id="edQ" placeholder="Tìm trong danh bạ" style="margin-bottom:6px">`:""}<div class="chips" id="edPeople"></div>
       <div class="keyrow" style="margin-top:6px"><input class="inp" id="edNew" placeholder="Người mới (lưu vào danh bạ)" maxlength="40"><button class="btn" id="edNewBtn">Thêm</button></div></div>
     <div><span class="lbl">Ai trả tiền</span><div class="chips" id="edPayer"></div></div>
-    <div class="grid2"><button class="btn" id="edScanBtn">${ic("camera")} Quét ảnh bill</button><button class="btn" id="edPasteBtn">${ic("copy")} Dán chữ bill</button></div><input type="file" accept="image/*" id="edScanFile" hidden>
-    ${aiReady()?`<label class="switch"><span class="small muted">Đọc ảnh bằng AI (chính xác hơn, tốn phí API)</span><input type="checkbox" id="edAIScan" ${prefs().aiScan?"checked":""}></label>`:""}<div id="edScan"></div>
-    <div class="seg" id="edMode"><button data-v="equal">Chia đều</button><button data-v="lines">Gán món</button><button data-v="items">Theo người</button><button data-v="custom">Tự nhập</button></div>
+    <input type="file" accept="image/*" id="edScanFile" hidden>
+    <div><span class="lbl">Chia thế nào?</span><div class="seg" id="edMode"><button data-v="equal">Chia đều</button><button data-v="lines">Gán món</button><button data-v="items">Theo người</button><button data-v="custom">Tự nhập</button></div></div>
     <div id="edPanel"></div>
     <label class="switch" id="edRoundRow"><span class="small">Làm tròn lên 1.000đ</span><input type="checkbox" id="edRound" ${ed.round?"checked":""}></label>
     <div class="preview" id="edPrev"></div><p class="err" id="edErr" hidden></p>
@@ -964,32 +963,41 @@ function openBillEditor(id,preset={}){
     $$("[data-p]",el).forEach(c=>c.onclick=()=>{const k=c.dataset.p;ed.sel=ed.sel.includes(k)?ed.sel.filter(x=>x!==k):[...ed.sel,k];if(!ed.sel.includes(ed.payer))ed.payer=ed.sel[0]||null;drawPeople();drawPanel()});
     $$("[data-pay]",el).forEach(c=>c.onclick=()=>{ed.payer=c.dataset.pay;drawPeople();drawPrev()});
   };
+  const explode=()=>{const out=[];ed.lines.forEach(l=>{const q=Math.max(1,l.qty||1);if(q>1&&money(l.price)){const unit=Math.round(money(l.price)/q);for(let i=0;i<q;i++)out.push({name:l.name,qty:1,price:fmtN(unit),who:i===0?[...l.who]:[]})}else out.push({...l,qty:1})});ed.lines=out};
+  const linesSum=()=>sum(ed.lines.map(l=>money(l.price)));
+  const syncTotal=()=>{if(ed.mode==="equal"&&!ed.totalTouched&&ed.lines.length){ed.total=fmtN(ed.receiptTotal||linesSum());const t=$("#edTotal",el);if(t)t.value=ed.total}};
   const drawPanel=()=>{
     $$("#edMode button",el).forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===ed.mode));
     $("#edRoundRow",el).hidden=ed.mode==="custom";
     const Pn=$("#edPanel",el);
-    const feesHTML=`<div class="fees"><input class="inp num" id="edShip" inputmode="decimal" value="${esc(ed.ship)}" placeholder="Phí giao" aria-label="Phí giao"><input class="inp num" id="edSvc" inputmode="decimal" value="${esc(ed.svc)}" placeholder="Phí khác" aria-label="Phí khác"><input class="inp num" id="edDisc" inputmode="decimal" value="${esc(ed.disc)}" placeholder="Giảm giá" aria-label="Giảm giá"></div>`;
+    const num=(id,val,ph,lbl)=>`<input class="inp num" id="${id}" inputmode="numeric" pattern="[0-9]*" value="${esc(val)}" placeholder="${ph}" aria-label="${lbl}" autocomplete="off">`;
+    const feesHTML=`<div class="fees">${num("edShip",ed.ship,"Phí giao","Phí giao")}${num("edSvc",ed.svc,"Phí khác","Phí khác")}${num("edDisc",ed.disc,"Giảm giá","Giảm giá")}</div>`;
     const bindFees=()=>[["#edShip","ship"],["#edSvc","svc"],["#edDisc","disc"]].forEach(([s,k])=>{const i=$(s,Pn);if(i)i.oninput=()=>{ed[k]=i.value;drawPrev()}});
-    if(ed.mode==="lines"){
+    const scanHTML=`<div class="row between"><button class="btn sm" id="edScanBtn">${ic("camera")} Quét ảnh bill</button>${aiReady()?`<label class="switch small muted" style="gap:6px">Đọc bằng AI<input type="checkbox" id="edAIScan" ${prefs().aiScan?"checked":""}></label>`:""}</div><div id="edScan">${ed.scanMsg||""}</div>`;
+    const bindScan=()=>{$("#edScanBtn",Pn).onclick=()=>$("#edScanFile",el).click();const a=$("#edAIScan",Pn);if(a)a.onchange=()=>store("tn2.prefs",{...prefs(),aiScan:a.checked});const eq=$("#edEqualAll",Pn);if(eq)eq.onclick=()=>{ed.mode="equal";ed.totalTouched=false;syncTotal();drawPanel()}};
+    if(ed.mode==="equal"||ed.mode==="lines"){
+      const assign=ed.mode==="lines";
       const short=k=>{const n=nm(k);return n==="Tôi"?n:n.split(/\s+/).slice(-1)[0]};
-      Pn.innerHTML=`<div class="stack" style="gap:6px">${ed.lines.map((l,i)=>`<div class="ln"><div class="ln-top"><input class="inp" data-lnn="${i}" value="${esc(l.name)}" placeholder="Tên món" aria-label="Tên món"><input class="inp num ln-p" data-lnp="${i}" inputmode="decimal" value="${esc(l.price)}" placeholder="Giá" aria-label="Giá"><button class="x" data-lnd="${i}" aria-label="Xóa món">✕</button></div>
-        <div class="chips">${ed.sel.map(k=>`<button class="chip mini" data-ln="${i}" data-k="${esc(k)}" aria-pressed="${l.who.includes(k)}">${esc(short(k))}</button>`).join("")}${l.who.filter(k=>ed.sel.includes(k)).length>1?`<span class="small muted">chia ${l.who.filter(k=>ed.sel.includes(k)).length}</span>`:""}</div></div>`).join("")}
-        <button class="btn sm" id="lnAdd" style="align-self:flex-start">${ic("plus")} Thêm món</button>${feesHTML}<p class="hint" style="margin:0">Bấm tên để gán món. Món gán nhiều người thì chia đều món đó. Món chưa gán chia đều cả bàn.</p></div>`;
+      Pn.innerHTML=`<div class="stack" style="gap:6px">${scanHTML}
+        ${ed.lines.map((l,i)=>`<div class="ln"><div class="ln-top"><input class="inp" data-lnn="${i}" value="${esc(l.name)}" placeholder="Tên món" aria-label="Tên món"><input class="inp num" data-lnp="${i}" inputmode="numeric" pattern="[0-9]*" value="${esc(l.price)}" placeholder="Giá" aria-label="Giá"><button class="x" data-lnd="${i}" aria-label="Xóa món">✕</button></div>
+          ${!assign&&l.qty>1?`<div class="small muted" style="padding:0 4px">Số lượng ${l.qty}</div>`:""}
+          ${assign?`<div class="chips">${ed.sel.map(k=>`<button class="chip mini" data-ln="${i}" data-k="${esc(k)}" aria-pressed="${l.who.includes(k)}">${esc(short(k))}</button>`).join("")}${l.who.filter(k=>ed.sel.includes(k)).length>1?`<span class="small muted">chia ${l.who.filter(k=>ed.sel.includes(k)).length}</span>`:""}</div>`:""}</div>`).join("")}
+        <button class="btn sm" id="lnAdd" style="align-self:flex-start">${ic("plus")} Thêm món</button>
+        ${assign?feesHTML+`<p class="hint" style="margin:0">Bấm tên để gán món. Món gán nhiều người thì chia đều món đó, món chưa gán chia đều cả bàn.</p>`
+          :`<div class="field"><label class="lbl" for="edTotal">Tổng bill</label>${num("edTotal",ed.total,"Vd: 450000 hoặc 450","Tổng bill")}</div><p class="hint" style="margin:0">Danh sách món chỉ để lưu lại bill có gì, không bắt buộc. Tiền chia đều theo Tổng bill.</p>`}</div>`;
+      bindScan();
       $$("[data-lnn]",Pn).forEach(i=>i.oninput=()=>{ed.lines[+i.dataset.lnn].name=i.value});
-      $$("[data-lnp]",Pn).forEach(i=>i.oninput=()=>{ed.lines[+i.dataset.lnp].price=i.value;drawPrev()});
-      $$("[data-lnd]",Pn).forEach(b=>b.onclick=()=>{ed.lines.splice(+b.dataset.lnd,1);drawPanel()});
+      $$("[data-lnp]",Pn).forEach(i=>i.oninput=()=>{ed.lines[+i.dataset.lnp].price=i.value;syncTotal();drawPrev()});
+      $$("[data-lnd]",Pn).forEach(b=>b.onclick=()=>{ed.lines.splice(+b.dataset.lnd,1);syncTotal();drawPanel()});
       $$("[data-ln]",Pn).forEach(b=>b.onclick=()=>{const l=ed.lines[+b.dataset.ln],k=b.dataset.k;l.who=l.who.includes(k)?l.who.filter(x=>x!==k):[...l.who,k];drawPanel()});
       $("#lnAdd",Pn).onclick=()=>{ed.lines.push({name:"",qty:1,price:"",who:[]});drawPanel();const ins=$$("[data-lnn]",Pn);ins[ins.length-1].focus()};
+      const t=$("#edTotal",Pn);if(t)t.oninput=()=>{ed.total=t.value;ed.totalTouched=true;drawPrev()};
       bindFees();drawPrev();return;
     }
-    if(ed.mode==="equal"){Pn.innerHTML=`<input class="inp num" id="edTotal" inputmode="decimal" placeholder="Tổng tiền, vd 450k" value="${esc(ed.total)}" autocomplete="off" aria-label="Tổng tiền">`;const t=$("#edTotal",Pn);t.oninput=()=>{ed.total=t.value;drawPrev()}}
-    else{
-      Pn.innerHTML=ed.sel.map(k=>`<div class="peritem"><span class="who">${avatar(nm(k))}<span>${esc(nm(k))}</span></span><input class="inp num" data-it="${esc(k)}" inputmode="decimal" placeholder="${ed.mode==="items"?"45k+15k":"0"}" value="${esc(ed.items[k]||"")}" autocomplete="off" aria-label="Tiền của ${esc(nm(k))}"><span class="val num" data-iv="${esc(k)}"></span></div>`).join("")+
-        (ed.mode==="items"?`${feesHTML}<p class="hint">Gõ 45 = 45.000đ. Phí và giảm giá chia theo tỷ lệ tiền món.</p>`:"");
-      $$("[data-it]",Pn).forEach(i=>i.oninput=()=>{ed.items[i.dataset.it]=i.value;drawPrev()});
-      [["#edShip","ship"],["#edSvc","svc"],["#edDisc","disc"]].forEach(([s,k])=>{const i=$(s,Pn);if(i)i.oninput=()=>{ed[k]=i.value;drawPrev()}});
-    }
-    drawPrev();
+    Pn.innerHTML=ed.sel.map(k=>`<div class="peritem"><span class="who">${avatar(nm(k))}<span>${esc(nm(k))}</span></span><input class="inp num" data-it="${esc(k)}" inputmode="numeric" pattern="[0-9]*" placeholder="0" value="${esc(ed.items[k]||"")}" autocomplete="off" aria-label="Tiền của ${esc(nm(k))}"><span class="val num" data-iv="${esc(k)}"></span></div>`).join("")+
+      (ed.mode==="items"?`${feesHTML}<p class="hint">Gõ 45 = 45.000đ. Phí và giảm giá chia theo tỷ lệ tiền của từng người.</p>`:`<p class="hint">Gõ 45 = 45.000đ. Mỗi người trả đúng số đã nhập.</p>`);
+    $$("[data-it]",Pn).forEach(i=>i.oninput=()=>{ed.items[i.dataset.it]=i.value;drawPrev()});
+    bindFees();drawPrev();
   };
   const drawPrev=()=>{
     const r=calc(ed);const pv=$("#edPrev",el);
@@ -1001,7 +1009,7 @@ function openBillEditor(id,preset={}){
       (ed.mode==="lines"&&ed.receiptTotal&&Math.abs(ed.receiptTotal-r.total)>=1000?`<p class="hint" style="color:var(--warn)">Tổng trên ảnh ${fmt(ed.receiptTotal)}, lệch ${fmt(r.total-ed.receiptTotal)}. Kiểm tra lại giá hoặc phí.</p>`:"")+
       (payer&&!bank?`<p class="hint">${esc(nm(ed.payer))} chưa có tài khoản ngân hàng nên chưa có QR${ed.payer===me?" (thêm trong Cài đặt)":""}.</p>`:"");
   };
-  $$("#edMode button",el).forEach(x=>x.onclick=()=>{ed.mode=x.dataset.v;drawPanel()});
+  $$("#edMode button",el).forEach(x=>x.onclick=()=>{ed.mode=x.dataset.v;if(ed.mode==="lines")explode();if(ed.mode==="equal")syncTotal();if(ed.mode==="items"||ed.mode==="custom")ed.scanMsg="";drawPanel()});
   $("#edRound",el).onchange=e=>{ed.round=e.target.checked;drawPrev()};
   const fq=$("#edQ",el);if(fq)fq.oninput=()=>{q=fq.value;drawPeople()};
   const addNew=()=>{const i=$("#edNew",el);const n=i.value.trim();if(!n)return;
@@ -1022,32 +1030,30 @@ function openBillEditor(id,preset={}){
       return {key:x.key,amount:x.amount,items:ed.mode==="equal"||ed.mode==="lines"?"":String(ed.items[x.key]||""),paid:isP?true:(same?!!o.paid:false),paidAt:isP?((o&&o.paidAt)||now):(same?o.paidAt||null:null),sentAt:same?o.sentAt||null:null,remindedAt:o?o.remindedAt||null:null,remindCount:o?o.remindCount||0:0}});
     const bill={id:ed.id||newCode(20),title:ed.placeName||"Ăn trưa "+dLabel(ed.date),placeName:ed.placeName,placeId:pl?pl.id:null,date:ed.date,platform:ed.platform,mode:ed.mode,total:r.total,
       fees:ed.mode==="items"||ed.mode==="lines"?{ship:money(ed.ship),svc:money(ed.svc),disc:money(ed.disc)}:null,
-      lines:ed.mode==="lines"?ed.lines.filter(l=>money(l.price)).map(l=>({name:l.name.trim()||"Món",qty:l.qty||1,price:money(l.price),who:l.who.filter(k=>ed.sel.includes(k))})):null,receiptTotal:ed.receiptTotal||null,round:ed.mode!=="custom"&&ed.round,payer:ed.payer,people,shares,payerBank:bankFor(cand.get(ed.payer)),
+      lines:ed.mode==="equal"?mergeLines(ed.lines.filter(l=>money(l.price)).map(l=>({name:l.name.trim()||"Món",qty:l.qty||1,price:money(l.price),who:[]}))):ed.mode==="lines"?ed.lines.filter(l=>money(l.price)).map(l=>({name:l.name.trim()||"Món",qty:l.qty||1,price:money(l.price),who:ed.mode==="lines"?l.who.filter(k=>ed.sel.includes(k)):[]})):null,receiptTotal:ed.receiptTotal||null,round:ed.mode!=="custom"&&ed.round,payer:ed.payer,people,shares,payerBank:bankFor(cand.get(ed.payer)),
       ownerPid:b?b.ownerPid:myPid(),createdAt:b?b.createdAt:now};
     saveBill(bill,b?b.members:[]);closeSheet();toast(b?"Đã lưu":"Đã tạo bill "+fmt(r.total));if(!b)setTimeout(()=>openBillDetail(bill.id,{fresh:true}),150);
   };
   const applyReceipt=r=>{
-    const box=$("#edScan",el);
-    if(!r.items.length){box.innerHTML=`<p class="err">Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ; hoặc dùng Dán chữ bill.</p>`;return}
+    if(!r.items.length){ed.scanMsg=`<p class="err">Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại, hoặc nhập tay.</p>`;drawPanel();return}
     if(r.place&&!$("#edPlace",el).value.trim())$("#edPlace",el).value=r.place;
     if(r.date&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&r.date<=todayISO()&&daysAgo(r.date)<60)$("#edDate",el).value=r.date;
-    ed.lines=r.items.map(it=>({name:it.name,qty:it.qty||1,price:fmtN(it.price),who:[]}));ed.ship=r.ship?fmtN(r.ship):"";ed.svc=r.service?fmtN(r.service):"";ed.disc=r.discount?fmtN(r.discount):"";ed.receiptTotal=r.total||0;
-    ed.mode="lines";drawPanel();
-    box.innerHTML=`<div class="preview small row between"><span>Đọc được <b>${r.items.length} món</b>${r.total?`, tổng <b>${fmt(r.total)}</b>`:""}. Kiểm tra lại tên và giá.</span>${r.total?`<button class="btn sm" id="edEqualAll">Chia đều tổng</button>`:""}</div>`;
-    const eq=$("#edEqualAll",box);if(eq)eq.onclick=()=>{ed.mode="equal";ed.total=fmtN(r.total);drawPanel()};
+    ed.lines=r.items.map(it=>({name:it.name,qty:it.qty||1,price:fmtN(it.price),who:[]}));ed.ship=r.ship?fmtN(r.ship):"";ed.svc=r.service?fmtN(r.service):"";ed.disc=r.discount?fmtN(r.discount):"";
+    ed.receiptTotal=r.total||(linesSum()+(r.ship||0)+(r.service||0)-(r.discount||0));
+    if(ed.mode==="lines")explode();
+    ed.totalTouched=false;syncTotal();
+    const nItems=sum(r.items.map(it=>it.qty||1));
+    ed.scanMsg=`<div class="preview small row between"><span>Đọc được <b>${nItems} món</b>, tổng bill <b>${fmt(ed.receiptTotal)}</b>. Kiểm tra lại tên và giá.</span>${ed.mode==="lines"?`<button class="btn sm" id="edEqualAll">Chia đều</button>`:""}</div>`;
+    drawPanel();
   };
-  const ai=$("#edAIScan",el);if(ai)ai.onchange=()=>store("tn2.prefs",{...prefs(),aiScan:ai.checked});
-  $("#edScanBtn",el).onclick=()=>$("#edScanFile",el).click();
-  $("#edPasteBtn",el).onclick=()=>{const box=$("#edScan",el);
-    box.innerHTML=`<div class="stack" style="gap:6px"><textarea class="inp" id="edPasteTxt" rows="5" placeholder="Dán chữ của bill vào đây. Trên iPhone: mở ảnh bill, giữ ngón tay lên chữ, Chọn tất cả, Sao chép."></textarea><button class="btn mint sm" id="edPasteGo" style="align-self:flex-end">Đọc món</button></div>`;
-    $("#edPasteTxt",box).focus();$("#edPasteGo",box).onclick=()=>applyReceipt(parseReceiptText($("#edPasteTxt",box).value))};
   $("#edScanFile",el).onchange=async e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
-    const box=$("#edScan",el);const useAI=aiReady()&&prefs().aiScan;
-    box.innerHTML=`<div class="thinking"><i></i><i></i><i></i> <span id="edScanMsg">${useAI?"AI đang đọc bill…":ocrWorker?"Đang đọc chữ…":"Lần đầu tải bộ đọc chữ (~5MB, chỉ một lần)…"}</span></div>`;
+    const useAI=aiReady()&&prefs().aiScan;
+    const setMsg=t=>{ed.scanMsg=`<div class="thinking"><i></i><i></i><i></i> <span id="edScanMsg">${t}</span></div>`;const b=$("#edScan",el);if(b)b.innerHTML=ed.scanMsg};
+    setMsg(useAI?"AI đang đọc bill…":ocrWorker?"Đang đọc chữ…":"Lần đầu tải bộ đọc chữ (~5MB, chỉ một lần)…");
     try{
       if(useAI)applyReceipt(await scanReceipt(f));
-      else{const txt=await ocrImage(f,p=>{const m=$("#edScanMsg",box);if(m)m.textContent="Đang đọc chữ… "+p+"%"});applyReceipt(parseReceiptText(txt))}
-    }catch(err){box.innerHTML=`<p class="err">${esc(err&&err.code==="no_items"?"Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại.":err&&err.code==="ocr_load"?"Không tải được bộ đọc chữ, kiểm tra mạng rồi thử lại.":err&&err.code?aiErrText(err):"Không đọc được ảnh này. Thử ảnh khác hoặc Dán chữ bill.")}</p>`}};
+      else{const txt=await ocrImage(f,p=>{const m=$("#edScanMsg",el);if(m)m.textContent="Đang đọc chữ… "+p+"%"});applyReceipt(parseReceiptText(txt))}
+    }catch(err){ed.scanMsg=`<p class="err">${esc(err&&err.code==="no_items"?"Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại.":err&&err.code==="ocr_load"?"Không tải được bộ đọc chữ, kiểm tra mạng rồi thử lại.":err&&err.code?aiErrText(err):"Không đọc được ảnh này, thử ảnh khác hoặc nhập tay.")}</p>`;drawPanel()}};
   drawPeople();drawPanel();
 }
 /* --- free receipt reading: on-device OCR (tesseract.js) or pasted text --- */
@@ -1126,6 +1132,7 @@ function openBillDetail(id,opt={}){
     el.innerHTML=`<div class="card">
       <div class="row between"><span class="small muted">${esc(dLong(b.date))} · ${esc(PLAT[b.platform]||"")}</span>${v.due?`<span class="badge b-warn">Chờ ${fmtK(v.due)}</span>`:`<span class="badge b-ok">Đã đủ</span>`}</div>
       <h3 style="font-size:1.15rem;margin:4px 0 2px">${esc(b.placeName||b.title)}</h3>
+      ${b.mode==="equal"&&(b.lines||[]).length?`<p class="small" style="margin:0 0 4px">${esc(mergeLines(b.lines).map(l=>l.name+(l.qty>1?" ×"+l.qty:"")).join(", "))}</p>`:""}
       <p class="small muted" style="margin:0 0 6px">${esc(dn(v.payer,b))} trả · ${({equal:"chia đều",lines:"gán món",items:"theo người",custom:"tự nhập"})[b.mode]||""}</p>
       ${(b.shares||[]).map(s=>{const p=P(b,s.key)||{name:"?"};const isP=s.key===b.payer;const mine=isMe(p);
         let st=isP?"Người trả":s.paid?"Đã trả":s.sentAt?"Báo đã chuyển":"Chưa trả";
@@ -1158,6 +1165,7 @@ function openBillDetail(id,opt={}){
   draw();
   if(opt.fresh)setTimeout(()=>toast("Bấm Gửi bill để gửi link và số tiền vào nhóm Zalo."),300);
 }
+function mergeLines(ls){const m=new Map();(ls||[]).forEach(l=>{const k=norm(l.name);const o=m.get(k);if(o){o.qty+=l.qty||1;o.price+=+l.price||0}else m.set(k,{...l,qty:l.qty||1,price:+l.price||0,who:[]})});return [...m.values()]}
 function dishesOf(b,key){
   const keys=(b.people||[]).map(p=>p.key);const out=[];
   (b.lines||[]).forEach(l=>{const who=(l.who||[]).filter(k=>keys.includes(k));const tgt=who.length?who:keys;if(tgt.includes(key))out.push(l.name+(tgt.length>1?" (1/"+tgt.length+")":""))});
@@ -1513,7 +1521,7 @@ function openGuide(){
     `<div class="mscr"><div class="mcap">Cài đặt → Hồ sơ</div>${row(av("Bảo")+" <b>Bảo</b>","")}<div class="minp">Vietcombank</div><div class="minp">0011 0012 3456 7</div><div class="mline">${hl(ic("qr")+" Xem thử QR")}${mb("Lưu","mint")}</div></div>`],
    ["Thêm người vào danh bạ","Bấm + để thêm, hoặc nút liên kết để gửi link của bạn: ai mở link sẽ có bạn trong danh bạ.",
     `<div class="mscr"><div class="mhead"><b>Danh bạ</b><span>${hl(ic("link"))} ${hl(ic("plus"),"")}</span></div>${row(av("Hà")+" Hà","<span class='pos'>+100k</span>")}${row(av("Minh")+" Minh","")}</div>`],
-   ["Tạo bill","Tab Bill, bấm +. Chọn người ăn, người trả, cách chia. Bấm Quét ảnh bill (miễn phí, đọc ngay trên máy) hoặc Dán chữ bill: app liệt kê từng món để bạn gán cho từng người, hoặc chia đều tổng.",
+   ["Tạo bill","Tab Bill, bấm +. Chọn Ai ăn, Ai trả, rồi Chia thế nào. Chia đều: quét ảnh bill (miễn phí) để lưu danh sách món và lấy tổng, hoặc nhập tay. Gán món: quét hoặc nhập món, món số lượng 2 trở lên tự tách dòng, bấm tên để gán. Theo người và Tự nhập: gõ số tiền từng người.",
     `<div class="mscr"><div class="mcap">Ai ăn</div><div class="mline">${mb(av("Tôi")+"Tôi","on")}${mb(av("Hà")+"Hà","on")}${mb(av("Minh")+"Minh","on")}${mb("+ Người mới")}</div>
      <div class="mseg"><span class="on">Chia đều</span><span>Theo món</span><span>Tự nhập</span></div><div class="minp">300k</div>
      <div class="mprev">${row("Tôi · trả","100.000đ")}${row("Hà","100.000đ")}${row("Minh","100.000đ")}</div></div>`],
