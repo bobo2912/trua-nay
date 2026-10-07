@@ -229,7 +229,9 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .sheet-h h3{font-size:1.05rem;font-weight:900}
 .x{border:0;background:var(--surface-2);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--muted)}
 .qrimg{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:12px}
-.toast{position:fixed;left:50%;bottom:calc(66px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 12px;border-radius:10px;font-size:.82rem;z-index:60;display:flex;gap:10px;align-items:center;max-width:calc(100% - 28px)}
+.toast{position:fixed;left:50%;bottom:calc(66px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.84rem;line-height:1.4;z-index:60;display:flex;gap:12px;align-items:center;justify-content:space-between;width:calc(100% - 28px);max-width:512px;box-shadow:var(--shadow)}
+.toast span{flex:1;min-width:0}
+.toast button{flex:none;white-space:nowrap}
 .toast button{background:none;border:0;color:var(--peach);font-weight:700}
 .onb{max-width:420px;margin:10vh auto 0;display:flex;flex-direction:column;gap:12px}
 .onb h2{font-size:1.5rem;font-weight:900}
@@ -305,7 +307,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.4.2", BUILD="07/10/2026";
+const VERSION="2.4.3", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
