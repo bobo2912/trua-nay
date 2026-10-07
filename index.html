@@ -247,7 +247,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.0.1", BUILD="07/10/2026";
+const VERSION="2.1.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -284,6 +284,7 @@ const ICONS={
  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
  right:'<path d="m9 6 6 6-6 6"/>',
  gps:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/>',
+ help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
  link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
 };
 const ic=(n,c="i")=>`<svg class="${c}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -347,7 +348,7 @@ function drawQR(ctx,text,x,y,size,dark="#2F2C3B"){
 
 /* ---------- state ---------- */
 const S={uid:null,me:recall("tn2.id",null),card:{},priv:{},contacts:[],places:[],bills:[],cards:{},mode:"loading",err:"",subs:[],loaded:{}};
-const ui={tab:recall("tn2.tab","eat"),eatView:"spin",spinSrc:null,fTags:[],fPrice:0,fDist:"",avoid:true,spinning:false,spinResult:null,
+const ui={tab:"eat",eatView:"spin",spinSrc:null,fTags:[],fPrice:0,fDist:"",avoid:true,spinning:false,spinResult:null,
   aiText:"",aiMood:[],aiBusy:false,aiRes:null,aiErr:"",aiCtl:null,dish:"",nearBusy:false,nearRes:null,nearErr:"",nearCtl:null,nearWeb:false,pos:null,posErr:"",
   billFilter:"all",debtView:"open",openPairs:new Set(),cq:"",confirm:null};
 const prefs=()=>Object.assign({useLoc:false},recall("tn2.prefs",{}));
@@ -462,7 +463,7 @@ function renderOnboard(err){
   $("#obGo").onclick=async e=>{const n=$("#obName").value.trim();if(!n){$("#obName").focus();return}e.target.disabled=true;e.target.textContent="Đang tạo…";
     const me={pid:newCode(20),secret:newCode(28)};
     try{await setDoc(D("keys",me.pid),{secret:me.secret,uids:arrayUnion(S.uid)});await setDoc(D("profiles",me.pid),{name:n,phone:"",bank:null,createdAt:new Date().toISOString()});
-      S.me=me;store("tn2.id",me);ui.tab="settings";startApp();toast("Chào "+n+"! Thêm tài khoản ngân hàng để nhận tiền.")}
+      S.me=me;store("tn2.id",me);ui.tab="eat";startApp()}
     catch(err){e.target.disabled=false;e.target.textContent="Bắt đầu";toast("Không tạo được hồ sơ ("+((err&&err.code)||"lỗi")+").")}};
   $("#obRestore").onclick=async e=>{const raw=$("#obCode").value.trim().replace(/^.*#me=/,"");const [pid,secret]=raw.split(".");const er=$("#obErr");
     if(!pid||!secret||pid.length<16){er.textContent="Mã chưa đúng dạng.";er.hidden=false;return}
@@ -480,7 +481,8 @@ function startApp(){
   live(C("profiles",me,"contacts"),s=>{S.contacts=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.contacts=true;loadCards();schedule()});
   live(C("profiles",me,"places"),s=>{S.places=s.docs.map(x=>({id:x.id,...x.data()}));schedule()});
   live(query(C("profiles",me,"bills"),where("date",">=",since(400))),s=>{S.bills=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.bills=true;syncLinks();schedule()});
-  $(".tabs").hidden=false;render();handleHash();
+  $(".tabs").hidden=false;render();handleHash();checkUpdate();
+  if(!recall("tn2.guided",false)&&!location.hash){store("tn2.guided",true);setTimeout(()=>{if(!$("#sheetRoot").firstChild)openGuide()},400)}
 }
 async function loadCards(){
   for(const c of S.contacts){if(c.pid&&!(c.pid in S.cards)){S.cards[c.pid]=null;try{const s=await getDoc(D("profiles",c.pid));S.cards[c.pid]=s.exists()?s.data():{}}catch(e){S.cards[c.pid]={}}schedule()}}
@@ -511,9 +513,10 @@ function header(){
   const d=new Date();const t=TABS.find(x=>x[0]===ui.tab)[1];
   const sub={eat:WDL[d.getDay()]+", "+d.getDate()+"/"+(d.getMonth()+1),bills:"Bill bạn trả hoặc có tên bạn",debts:"Ai nợ ai, bao nhiêu",contacts:"Người hay ăn cùng",settings:"Trưa Nay "+VERSION}[ui.tab];
   const act={bills:`<button class="icon-btn mint" id="hNew" aria-label="Tạo bill">${ic("plus")}</button>`,contacts:`<button class="icon-btn" id="hMyLink" aria-label="Gửi link của tôi">${ic("link")}</button><button class="icon-btn mint" id="hNewC" aria-label="Thêm người">${ic("plus")}</button>`}[ui.tab]||"";
-  return `<div><h1>${t}</h1><small>${esc(sub)}</small></div><div class="act">${act}</div>`;
+  return `<div><h1>${t}</h1><small>${esc(sub)}</small></div><div class="act"><button class="icon-btn" id="hHelp" aria-label="Hướng dẫn">${ic("help")}</button>${act}</div>`;
 }
 function bindHeader(){
+  $("#hHelp").onclick=openGuide;
   const n=$("#hNew");if(n)n.onclick=()=>openBillEditor();
   const c=$("#hNewC");if(c)c.onclick=()=>openContact(null);
   const l=$("#hMyLink");if(l)l.onclick=shareMyLink;
@@ -1207,6 +1210,9 @@ function viewSettings(){
   <div class="sec"><h2>Nhắc nợ</h2></div><div class="set">${row("sRemind","Lịch nhắc",`Sau ${c.remindAfter} ngày, lặp lại mỗi ${c.remindEvery} ngày`)}</div>
   <div class="sec"><h2>AI</h2></div><div class="set">${row("sAI","API key Claude",ai.key?"Đã nhập · "+esc((AI_MODELS.find(m=>m[0]===ai.model)||AI_MODELS[0])[1])+(ai.web?" · tìm web":""):"Chưa nhập · chỉ lưu trên máy này")}</div>
   <div class="sec"><h2>Thiết bị</h2></div><div class="set">${row("sDevice","Mã khôi phục","Dùng khi đổi máy hoặc cài lên màn hình chính")}</div>
+  <div class="sec"><h2>Ứng dụng</h2></div><div class="set">
+    ${row("sGuide","Hướng dẫn sử dụng","")}
+    <button class="li" id="sUpdate"><span class="mid"><b>Phiên bản ${VERSION}</b><small>${upd.latest&&newer(upd.latest,VERSION)?"Có bản mới "+esc(upd.latest)+", bấm để cập nhật":upd.checking?"Đang kiểm tra…":upd.at?"Đã là bản mới nhất · kiểm tra lúc "+esc(upd.at):"Bấm để kiểm tra bản mới"}</small></span>${upd.latest&&newer(upd.latest,VERSION)?`<span class="badge b-warn">Cập nhật</span>`:`<span class="chev">${ic("right")}</span>`}</button></div>
   <p class="ver">Trưa Nay v${VERSION} · ${BUILD}</p>`;
 }
 bind.settings=m=>{
@@ -1220,6 +1226,8 @@ bind.settings=m=>{
   $("#sRemind",m).onclick=()=>miniForm("Lịch nhắc nợ",`<div class="grid2"><div class="field"><label class="lbl" for="mf1">Nhắc sau (ngày)</label><input class="inp num" id="mf1" type="number" min="0" max="30" value="${cfg().remindAfter}"></div><div class="field"><label class="lbl" for="mf2">Lặp lại mỗi (ngày)</label><input class="inp num" id="mf2" type="number" min="1" max="30" value="${cfg().remindEvery}"></div></div>`,el=>savePriv({remindAfter:clamp($("#mf1",el).value,2,0,30),remindEvery:clamp($("#mf2",el).value,2,1,30)}));
   $("#sAI",m).onclick=openAISettings;
   $("#sDevice",m).onclick=openDevice;
+  $("#sGuide",m).onclick=openGuide;
+  $("#sUpdate",m).onclick=()=>{if(upd.latest&&newer(upd.latest,VERSION))applyUpdate();else checkUpdate(true)};
 };
 function setTheme(t){store("tn2.theme",t);document.documentElement.setAttribute("data-theme",t);
   const c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t];$$('meta[name="theme-color"]').forEach(x=>x.setAttribute("content",c));render()}
@@ -1298,6 +1306,47 @@ function openPlaceEditor(id,preset={}){
     savePlace(id||rid(),{name,tags:ed.tags,price:ed.price,dist:ed.dist,address:$("#peAddr",el).value.trim(),note:$("#peNote",el).value.trim(),archived:false,createdAt:p?p.createdAt:new Date().toISOString()});
     closeSheet();toast(p?"Đã lưu":"Đã thêm "+name)};
   const dl=$("#peDel",el);if(dl)dl.onclick=()=>{if(ui.confirm!=="pe"+id){ui.confirm="pe"+id;dl.textContent="Bấm lần nữa";return}ui.confirm=null;savePlace(id,{archived:true});closeSheet();toast("Đã xóa "+p.name,()=>savePlace(id,{archived:false}))};
+}
+
+/* ---------- update check: compares with version.json on GitHub Pages ---------- */
+const upd={latest:null,notes:"",checking:false,at:null,shown:null};
+function newer(a,b){const x=String(a).split(".").map(Number),y=String(b).split(".").map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)}return false}
+async function checkUpdate(manual){
+  if(upd.checking)return;upd.checking=true;if(manual)render();
+  try{const r=await fetch("version.json?t="+Date.now(),{cache:"no-store"});const j=await r.json();upd.latest=j.version;upd.notes=j.notes||"";const d=new Date();upd.at=pad(d.getHours())+":"+pad(d.getMinutes())}
+  catch(e){if(manual)toast("Chưa kiểm tra được, thử lại khi có mạng.")}
+  upd.checking=false;upd.last=Date.now();
+  if(upd.latest&&newer(upd.latest,VERSION)){if(manual||upd.shown!==upd.latest){upd.shown=upd.latest;showUpdateBar()}}
+  else if(manual&&upd.latest)toast("Bạn đang dùng bản mới nhất ("+VERSION+")");
+  render();
+}
+function showUpdateBar(){
+  const r=$("#toastRoot");r.innerHTML=`<div class="toast" role="status"><span>Có bản mới ${esc(upd.latest)}${upd.notes?": "+esc(upd.notes):""}</span><button id="updGo">Tải lại</button></div>`;
+  clearTimeout(toastT);$("#updGo").onclick=applyUpdate;
+}
+async function applyUpdate(){
+  toast("Đang cập nhật…");
+  try{const regs=await navigator.serviceWorker?.getRegistrations?.()||[];for(const g of regs)await g.update().catch(()=>{});
+    if(window.caches){for(const k of await caches.keys())await caches.delete(k)}}catch(e){}
+  location.reload();
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&S.mode==="db"&&(!upd.at||Date.now()-upd.last>30*60000)){upd.last=Date.now();checkUpdate()}});
+
+/* ---------- guide ---------- */
+function openGuide(){
+  const G=[
+   ["Bắt đầu","Vào <b>Cài đặt → Hồ sơ</b>, nhập số Zalo và tài khoản ngân hàng. Bấm <b>Xem thử QR</b>, quét bằng app ngân hàng để chắc tên hiện đúng. Có tài khoản thì người khác mới quét QR trả bạn được."],
+   ["Thêm người vào danh bạ","Tab <b>Danh bạ</b>, bấm <b>+</b> và nhập tên, số Zalo. Hoặc bấm nút liên kết để gửi <b>link của bạn</b>: ai mở link sẽ thêm bạn vào danh bạ của họ, hai bên tự liên kết."],
+   ["Tạo bill","Tab <b>Bill</b>, bấm <b>+</b>. Nhập quán, chọn <b>Ai ăn</b> (người chưa có thì gõ tên ở ô Người mới), chọn <b>Ai trả tiền</b>. Chia đều thì nhập tổng; theo món thì nhập giá từng người, gõ <b>45</b> nghĩa là 45.000đ, nhiều món gõ <b>45k+15k</b>. Phí giao và giảm giá được chia theo tỷ lệ."],
+   ["Mời người vào bill","Mở bill, bấm <b>Gửi bill cho mọi người</b> rồi chọn nhóm Zalo. Mỗi người mở link, bấm <b>Là tôi</b> ở dòng tên mình. Từ đó bill hiện trong app của họ, các bill sau có tên họ cũng tự hiện."],
+   ["Thu và trả tiền","Người trả tiền: bấm <b>QR</b> ở từng người, hoặc <b>Ảnh QR cả nhóm</b> để gửi một ảnh cho cả nhóm. Người nợ: bấm <b>QR trả</b>, quét bằng app ngân hàng, rồi bấm <b>Tôi đã chuyển</b>. Người trả tiền thấy báo, kiểm tra tài khoản và bấm <b>Đã nhận</b>."],
+   ["Công nợ","Tab <b>Công nợ</b> gom theo người: <b>Nợ tôi</b> và <b>Tôi nợ</b>, bấm vào để xem từng bill. Người nợ quá hạn có nhãn <b>Cần nhắc</b>: bấm <b>Nhắc kèm QR</b> để gửi một QR gộp tất cả các bữa. Lịch nhắc chỉnh ở Cài đặt."],
+   ["Trưa nay ăn gì","<b>Quay số</b> trong quán hay ăn (thêm ở Cài đặt) hoặc danh sách món. <b>Gợi ý</b>: AI chọn theo thời tiết, ngân sách, lịch sử. <b>Gần đây</b>: mở Google Maps hoặc AI tìm quán quanh vị trí. <b>Bình chọn</b>: tạo rồi gửi link, mọi người vote, bấm Chốt rồi Tạo bill."],
+   ["AI và chi phí","AI dùng API key Claude của chính bạn (Cài đặt → API key), key chỉ lưu trên máy này. Gợi ý món khoảng 100–300đ/lần; tìm quán trên web khoảng 2.000–4.000đ/lần."],
+   ["Cài lên màn hình chính","iPhone: Safari → Chia sẻ → <b>Thêm vào MH chính</b>. Lần đầu mở từ icon, app hỏi <b>mã khôi phục</b>: lấy ở Cài đặt → Mã khôi phục trong Safari. Dùng mã này cả khi đổi điện thoại."]
+  ];
+  openSheet("Hướng dẫn",`<div class="stack" style="gap:6px">${G.map(([t,b],i)=>`<details class="card"${i===0?" open":""}><summary style="font-weight:700;cursor:pointer;font-family:var(--f-head)">${i+1}. ${t}</summary><p class="small" style="margin:8px 0 2px;line-height:1.55">${b}</p></details>`).join("")}
+    <p class="hint" style="text-align:center">Mở lại hướng dẫn bằng nút ? ở góc trên.</p></div>`);
 }
 
 /* ---------- links: #b= bill, #p= person, #v= poll ---------- */
