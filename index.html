@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
-<script src="config.js?v=2.10.3"></script>
+<script src="config.js?v=2.11.0"></script>
 <script>(function(){var t="pastel";try{t=JSON.parse(localStorage.getItem("tn2.theme"))||"pastel"}catch(e){}document.documentElement.setAttribute("data-theme",t);var c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t]||"#F6F4FB";document.write('<meta name="theme-color" content="'+c+'">')})();</script>
 <style>
 /* Pastel, compact: lavender-mist ground, mint as the action colour, peach for the one playful moment (spin) */
@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.10.3", BUILD="07/10/2026";
+const VERSION="2.11.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -407,6 +407,17 @@ function notifySent(){
   if(!fresh.length)return;fresh.forEach(({b,s})=>seen.add(b.id+"|"+s.key+"|"+s.sentAt));store("tn2.seenSent",[...seen].slice(-200));
   const first=fresh[0];const who=dn(P(first.b,first.s.key),first.b);const amt=sum(fresh.map(x=>x.s.amount));
   setTimeout(()=>toast(fresh.length>1?`${fresh.length} người báo đã chuyển, tổng ${fmt(amt)}`:`${who} báo đã chuyển ${fmt(amt)} (${first.b.placeName||first.b.title})`,()=>go("debts"),"Xem",9000),400);
+}
+function openLinkPaste(){
+  const el=openSheet("Mở bill từ link",`<div class="stack">
+    <p class="small" style="margin:0">Dán link bill, link bình chọn hoặc link hồ sơ bạn bè nhận được qua Zalo.</p>
+    <div class="keyrow"><input class="inp" id="lkIn" placeholder="https://…/trua-nay/#b=…" autocomplete="off" autocapitalize="off"><button class="btn" id="lkPaste" data-kf>Dán</button></div>
+    <p class="err" id="lkErr" hidden></p><button class="btn mint block" id="lkGo">Mở</button></div>`);
+  const go=()=>{const v=$("#lkIn",el).value.trim();const m=v.match(/#([bpv]=[a-z0-9]{16,40}(?:~[^\s]*)?)/i)||v.match(/^([bpv]=[a-z0-9]{16,40})$/i);
+    if(!m){const e=$("#lkErr",el);e.textContent="Link chưa đúng. Link bill có dạng …/trua-nay/#b=…";e.hidden=false;return}
+    closeSheet();pendingHash="#"+m[1];handleHash()};
+  $("#lkPaste",el).onclick=async()=>{try{const t=await navigator.clipboard.readText();$("#lkIn",el).value=t;if(/#[bpv]=/.test(t))go()}catch(e){$("#lkIn",el).focus();toast("Nhấn giữ vào ô rồi chọn Dán.")}};
+  $("#lkGo",el).onclick=go;$("#lkIn",el).onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();go()}};
 }
 const store=(k,v)=>{try{v===undefined?localStorage.removeItem(k):localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const recall=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
@@ -544,9 +555,11 @@ function renderOnboard(err){
   $("#main").innerHTML=`<div class="onb">
     <div><h2>Trưa Nay</h2><p class="muted" style="margin:4px 0 0">Chọn quán, chia bill, gửi QR cho bạn bè.</p></div>
     ${err?`<p class="err">${esc(err)}</p>`:""}
+    ${pendingHash&&!isStandalone()?`<div class="card stack" style="background:var(--butter-soft)"><b>Đã cài app Trưa Nay trên màn hình chính?</b><p class="small" style="margin:0">Link mở trong Zalo hoặc Safari là một "máy" khác với app đã cài, nên đừng tạo hồ sơ mới ở đây. Hãy chép link, mở app từ màn hình chính → tab <b>Bill</b> → nút ${ic("link")} → dán link.</p><button class="btn block" id="obCopyLink">${ic("copy")} Chép link này</button><p class="hint" style="margin:0">Chưa cài app thì nhập tên bên dưới để xem bill ngay.</p></div>`:""}
     <div class="card stack"><label class="lbl" for="obName" style="margin:0">Tên của bạn</label><input class="inp" id="obName" maxlength="40" placeholder="Vd: Bảo" autocomplete="name"><button class="btn mint block" id="obGo">Bắt đầu</button></div>
     <div class="card stack"><label class="lbl" for="obCode" style="margin:0">Đã dùng trên máy khác? Dán mã khôi phục</label><input class="inp" id="obCode" placeholder="Mã trong Cài đặt → Thiết bị" autocomplete="off"><p class="err" id="obErr" hidden></p><button class="btn block" id="obRestore">Khôi phục</button></div>
   </div>`;
+  const ocl=$("#obCopyLink");if(ocl)ocl.onclick=()=>copyText(location.origin+location.pathname+pendingHash,"Đã chép link. Mở app Trưa Nay để dán.");
   $("#obGo").onclick=async e=>{const n=$("#obName").value.trim();if(!n){$("#obName").focus();return}e.target.disabled=true;e.target.textContent="Đang tạo…";
     const me={pid:newCode(20),secret:newCode(28)};
     try{await setDoc(D("keys",me.pid),{secret:me.secret,uids:arrayUnion(S.uid)});await setDoc(D("profiles",me.pid),{name:n,phone:"",bank:null,createdAt:new Date().toISOString()});
@@ -604,12 +617,13 @@ function render(){
 function header(){
   const d=new Date();const t=TABS.find(x=>x[0]===ui.tab)[1];
   const sub={eat:WDL[d.getDay()]+", "+d.getDate()+"/"+(d.getMonth()+1),bills:"Bill bạn trả hoặc có tên bạn",debts:"Ai nợ ai, bao nhiêu",contacts:"Người hay ăn cùng",settings:"Trưa Nay "+VERSION}[ui.tab];
-  const act={bills:`<button class="icon-btn mint" id="hNew" aria-label="Tạo bill">${ic("plus")}</button>`,contacts:`<button class="icon-btn" id="hMyLink" aria-label="Gửi link của tôi">${ic("link")}</button><button class="icon-btn mint" id="hNewC" aria-label="Thêm người">${ic("plus")}</button>`}[ui.tab]||"";
+  const act={bills:`<button class="icon-btn" id="hOpenLink" aria-label="Mở link bill">${ic("link")}</button><button class="icon-btn mint" id="hNew" aria-label="Tạo bill">${ic("plus")}</button>`,contacts:`<button class="icon-btn" id="hMyLink" aria-label="Gửi link của tôi">${ic("link")}</button><button class="icon-btn mint" id="hNewC" aria-label="Thêm người">${ic("plus")}</button>`}[ui.tab]||"";
   return `<div><h1>${t}</h1><small>${esc(sub)}</small></div><div class="act"><button class="icon-btn" id="hHelp" aria-label="Hướng dẫn">${ic("help")}</button>${act}</div>`;
 }
 function bindHeader(){
   $("#hHelp").onclick=openGuide;
   const n=$("#hNew");if(n)n.onclick=()=>openBillEditor();
+  const ol=$("#hOpenLink");if(ol)ol.onclick=openLinkPaste;
   const c=$("#hNewC");if(c)c.onclick=()=>openContact(null);
   const l=$("#hMyLink");if(l)l.onclick=shareMyLink;
 }
@@ -1208,6 +1222,7 @@ function openBillDetail(id,opt={}){
         else if(!isP&&s.paid&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Hoàn tác</button>`;
         if(!inBill&&!p.pid)acts+=`<button class="btn sm mint" data-claim="${esc(s.key)}">Là tôi</button>`;
         if(mine&&!owner)acts+=`<button class="btn sm ghost" data-unclaim="${esc(s.key)}">Không phải tôi</button>`;
+        else if(owner&&p.pid&&!mine)acts+=`<button class="btn sm ghost" data-unclaim="${esc(s.key)}" title="Cho người này nhận lại từ máy khác">Gỡ liên kết</button>`;
         if(!inBill&&p.pid)st+=" · đã có người nhận";
         return `<div class="share-wrap"><div class="share">${avatar(dn(p,b))}<div class="mid"><b>${esc(dn(p,b))}</b><small>${st}${b.mode==="items"&&s.items?" · món "+fmtK(money(s.items)):""}${b.mode==="lines"?esc(dishesOf(b,s.key)):""}</small></div><div class="amt num">${fmt(s.amount)}</div></div>${acts?`<div class="share acts" style="border:0;padding:4px 0 0 38px">${acts}</div>`:""}</div>`}).join("")}
       <div class="total"><span class="muted small">Tổng</span><b class="num">${fmt(b.total)}</b></div>${feeLine(b)}
@@ -1244,7 +1259,7 @@ function dishesOf(b,key){
 }
 function sendBill(b){
   const lines=(b.shares||[]).filter(s=>s.key!==b.payer).map(s=>`- ${dn(P(b,s.key),b)}: ${fmt(s.amount)}${settled(s)?" (đã trả)":""}`).join("\n");
-  const text=`${b.placeName||b.title} ${dLabel(b.date)}, tổng ${fmt(b.total)}. ${dn(P(b,b.payer),b)} trả trước.\n${lines}\nXem bill và QR chuyển khoản:`;
+  const text=`${b.placeName||b.title} ${dLabel(b.date)}, tổng ${fmt(b.total)}. ${dn(P(b,b.payer),b)} trả trước.\n${lines}\nĐã cài app Trưa Nay: chép link → mở app → Bill → nút 🔗 → dán. Chưa cài thì bấm link để xem bill và QR:`;
   shareOrCopy({title:b.placeName||b.title,text,url:shareBase()+"#b="+b.id},"Đã chép tin nhắn kèm link bill");
 }
 
