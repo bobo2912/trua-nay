@@ -229,7 +229,7 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .sheet-h{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0 10px;z-index:2}
 .sheet-h h3{font-size:1.05rem;font-weight:900}
 .x{border:0;background:var(--surface-2);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--muted)}
-.qrimg{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:12px}
+.qrimg{-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto;width:100%;max-width:300px;display:block;margin:0 auto;border-radius:12px}
 .toast{position:fixed;left:50%;bottom:calc(66px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.84rem;line-height:1.4;z-index:60;display:flex;gap:12px;align-items:center;justify-content:space-between;width:calc(100% - 28px);max-width:512px;box-shadow:var(--shadow)}
 .toast span{flex:1;min-width:0}
 .toast button{flex:none;white-space:nowrap}
@@ -313,7 +313,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.8.0", BUILD="07/10/2026";
+const VERSION="2.8.1", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -1262,20 +1262,30 @@ async function groupCard(b){
   x.fillStyle="#8C88A1";x.font="500 21px "+F;x.textAlign="center";x.fillText("Mỗi người quét đúng mã có tên mình · VietQR",W/2,H-30);
   return c;
 }
-function qrActions(el,{canvas,filename,msg,phone,onSent}){
-  const url=canvas.toDataURL("image/png");let file=null;canvas.toBlob(b=>{if(b)file=new File([b],filename,{type:"image/png"})},"image/png");
-  const canShare=!!(navigator.share&&navigator.canShare);
+async function qrActions(el,{canvas,filename,msg,phone,onSent}){
+  const blob=await new Promise(r=>canvas.toBlob(r,"image/png"));
+  const file=blob?new File([blob],filename,{type:"image/png"}):null;
+  const url=blob?URL.createObjectURL(blob):canvas.toDataURL("image/png");
+  const canShareFile=!!(file&&navigator.share&&navigator.canShare&&navigator.canShare({files:[file]}));
+  const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
   el.innerHTML=`<img class="qrimg" alt="Mã QR chuyển khoản" src="${url}">
-    <div class="stack" style="margin-top:10px">
-      ${canShare?`<button class="btn mint block" id="qShare">${ic("send")} Gửi ảnh QR (chọn Zalo)</button>`:""}
-      <div class="grid2"><a class="btn ${canShare?"":"mint"}" id="qSave" href="${url}" download="${esc(filename)}">${ic("save")} Lưu ảnh</a><button class="btn" id="qCopy">${ic("copy")} Chép lời nhắn</button></div>
+    <p class="hint" style="text-align:center;margin-top:6px">Hoặc nhấn giữ ảnh QR → Lưu vào Ảnh</p>
+    <div class="stack" style="margin-top:8px">
+      ${canShareFile?`<button class="btn mint block" id="qShare">${ic("send")} Gửi ảnh QR (chọn Zalo)</button>`:""}
+      <div class="grid2"><button class="btn ${canShareFile?"":"mint"}" id="qSave">${ic("save")} Lưu ảnh</button><button class="btn" id="qCopy">${ic("copy")} Chép lời nhắn</button></div>
       ${phone?`<a class="btn block" target="_blank" rel="noopener" href="https://zalo.me/${esc(phone)}">Mở chat Zalo</a>`:""}
       <textarea class="inp small" id="qMsg" rows="3" readonly aria-label="Lời nhắn">${esc(msg)}</textarea>
     </div>`;
   const sh=$("#qShare",el);if(sh)sh.onclick=async()=>{try{await navigator.clipboard.writeText(msg)}catch(e){}
-    const data=file&&navigator.canShare({files:[file]})?{files:[file],text:msg}:{text:msg};
-    try{await navigator.share(data);onSent&&onSent()}catch(e){if(e&&e.name!=="AbortError")toast("Không mở được bảng chia sẻ, dùng Lưu ảnh.")}};
-  $("#qSave",el).addEventListener("click",()=>onSent&&onSent());
+    try{await navigator.share({files:[file],text:msg});onSent&&onSent()}catch(e){if(e&&e.name!=="AbortError")toast("Không mở được bảng chia sẻ, nhấn giữ ảnh để lưu.")}};
+  $("#qSave",el).onclick=async()=>{
+    // iPhone/Android: share sheet has "Lưu hình ảnh" (Save Image) which puts it in Photos; desktop: normal download
+    if(canShareFile&&(isIOS||/Android/i.test(navigator.userAgent))){
+      try{await navigator.share({files:[file]});onSent&&onSent();return}catch(e){if(e&&e.name==="AbortError")return}
+    }
+    try{const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();onSent&&onSent();if(isIOS)toast("Nếu chưa lưu được, nhấn giữ ảnh QR → Lưu vào Ảnh.")}
+    catch(e){toast("Nhấn giữ ảnh QR → Lưu vào Ảnh.")}
+  };
   $("#qCopy",el).onclick=async()=>{if(await copyText(msg,"Đã chép lời nhắn"))onSent&&onSent();else{const t=$("#qMsg",el);t.focus();t.select()}};
 }
 async function openQR(g){
@@ -1290,13 +1300,13 @@ async function openQR(g){
   const msg=g.dir==="out"||who==="Tôi"?`Mình chuyển tiền cơm ${fmt(amount)}${multi?":\n"+lines:""}. Nội dung "${note}".`
     :`Chào ${who}, tiền cơm của bạn${multi?":\n"+lines+"\nTổng":""} là ${fmt(amount)}. Quét QR giúp mình nhé: ${bankName(bank.bin)} ${bank.acc} - ${bank.holder||""}, nội dung "${note}". Cảm ơn!`;
   const phone=g.person&&!isMe(g.person)?(g.person.phone||((contactByPid(g.person.pid)||contactById(g.person.cid)||{}).phone)||(S.cards[g.person.pid]||{}).phone):null;
-  qrActions(el,{canvas,filename:`QR-${unaccent(who).replace(/\s+/g,"-")}-${Math.round(amount)}.png`,msg,phone,onSent:()=>g.remind&&recordRemind(g)});
+  await qrActions(el,{canvas,filename:`QR-${unaccent(who).replace(/\s+/g,"-")}-${Math.round(amount)}.png`,msg,phone,onSent:()=>g.remind&&recordRemind(g)});
 }
 async function openGroupQR(b){
   const el=openSheet("Ảnh QR cả nhóm",`<div class="thinking"><i></i><i></i><i></i> Đang ghép QR…</div>`);
   const canvas=await groupCard(b);const due=b.shares.filter(s=>!s.paid&&s.key!==b.payer&&s.amount>0);
   const msg=`Tiền cơm ${b.placeName||b.title} ${dLabel(b.date)}, tổng ${fmt(b.total)}:\n${due.map(s=>`- ${dn(P(b,s.key),b)}: ${fmt(s.amount)}`).join("\n")}\nQuét đúng mã có tên mình nhé. Bill: ${shareBase()}#b=${b.id}`;
-  qrActions(el,{canvas,filename:`QR-nhom-${b.date}.png`,msg,phone:null});
+  await qrActions(el,{canvas,filename:`QR-nhom-${b.date}.png`,msg,phone:null});
 }
 /* =====================================================================
    CÔNG NỢ
