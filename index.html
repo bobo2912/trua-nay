@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
-<script src="config.js?v=2.11.0"></script>
+<script src="config.js?v=2.12.0"></script>
 <script>(function(){var t="pastel";try{t=JSON.parse(localStorage.getItem("tn2.theme"))||"pastel"}catch(e){}document.documentElement.setAttribute("data-theme",t);var c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t]||"#F6F4FB";document.write('<meta name="theme-color" content="'+c+'">')})();</script>
 <style>
 /* Pastel, compact: lavender-mist ground, mint as the action colour, peach for the one playful moment (spin) */
@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.11.0", BUILD="07/10/2026";
+const VERSION="2.12.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -542,6 +542,9 @@ async function boot(){
   const auth=getAuth(app);let started=false;
   onAuthStateChanged(auth,async u=>{
     if(!u||started)return;started=true;S.uid=u.uid;
+    const ml=(pendingHash||"").match(/#me=([a-z0-9]{16,40})\.([a-z0-9]{20,60})/i);
+    if(ml&&(!S.me||S.me.pid===ml[1])){pendingHash="";history.replaceState(null,"",location.pathname);
+      try{const nm=await switchProfile(ml[1],ml[2],false);toast("Đã liên kết với hồ sơ "+nm+". Từ giờ máy này và app dùng chung dữ liệu.");return}catch(e){renderOnboard("Link liên kết không đúng hoặc đã cũ.");return}}
     if(!S.me){renderOnboard();return}
     try{await setDoc(D("keys",S.me.pid),{secret:S.me.secret,uids:arrayUnion(S.uid)},{merge:true})}
     catch(e){if(e&&e.code==="permission-denied"){renderOnboard("Mã khôi phục trên máy này không còn đúng. Nhập lại mã hoặc tạo hồ sơ mới.");return}}
@@ -555,7 +558,7 @@ function renderOnboard(err){
   $("#main").innerHTML=`<div class="onb">
     <div><h2>Trưa Nay</h2><p class="muted" style="margin:4px 0 0">Chọn quán, chia bill, gửi QR cho bạn bè.</p></div>
     ${err?`<p class="err">${esc(err)}</p>`:""}
-    ${pendingHash&&!isStandalone()?`<div class="card stack" style="background:var(--butter-soft)"><b>Đã cài app Trưa Nay trên màn hình chính?</b><p class="small" style="margin:0">Link mở trong Zalo hoặc Safari là một "máy" khác với app đã cài, nên đừng tạo hồ sơ mới ở đây. Hãy chép link, mở app từ màn hình chính → tab <b>Bill</b> → nút ${ic("link")} → dán link.</p><button class="btn block" id="obCopyLink">${ic("copy")} Chép link này</button><p class="hint" style="margin:0">Chưa cài app thì nhập tên bên dưới để xem bill ngay.</p></div>`:""}
+    ${pendingHash&&!isStandalone()?`<div class="card stack" style="background:var(--butter-soft)"><b>Đã cài app Trưa Nay trên màn hình chính?</b><p class="small" style="margin:0">Link mở trong Zalo hoặc Safari là một "máy" khác với app đã cài, nên đừng tạo hồ sơ mới ở đây. Hãy chép link, mở app từ màn hình chính → tab <b>Bill</b> → nút ${ic("link")} → dán link. Muốn Safari luôn dùng chung hồ sơ với app: trong app vào <b>Cài đặt → Liên kết Safari</b>.</p><button class="btn block" id="obCopyLink">${ic("copy")} Chép link này</button><p class="hint" style="margin:0">Chưa cài app thì nhập tên bên dưới để xem bill ngay.</p></div>`:""}
     <div class="card stack"><label class="lbl" for="obName" style="margin:0">Tên của bạn</label><input class="inp" id="obName" maxlength="40" placeholder="Vd: Bảo" autocomplete="name"><button class="btn mint block" id="obGo">Bắt đầu</button></div>
     <div class="card stack"><label class="lbl" for="obCode" style="margin:0">Đã dùng trên máy khác? Dán mã khôi phục</label><input class="inp" id="obCode" placeholder="Mã trong Cài đặt → Thiết bị" autocomplete="off"><p class="err" id="obErr" hidden></p><button class="btn block" id="obRestore">Khôi phục</button></div>
   </div>`;
@@ -568,9 +571,23 @@ function renderOnboard(err){
   $("#obRestore").onclick=async e=>{const raw=$("#obCode").value.trim().replace(/^.*#me=/,"");const [pid,secret]=raw.split(".");const er=$("#obErr");
     if(!pid||!secret||pid.length<16){er.textContent="Mã chưa đúng dạng.";er.hidden=false;return}
     e.target.disabled=true;
-    try{await setDoc(D("keys",pid),{secret,uids:arrayUnion(S.uid)},{merge:true});const card=await getDoc(D("profiles",pid));if(!card.exists())throw{code:"not-found"};
-      S.me={pid,secret};store("tn2.id",S.me);startApp();toast("Đã khôi phục hồ sơ "+(card.data().name||""))}
+    try{const nm=await switchProfile(pid,secret,false);toast("Đã khôi phục hồ sơ "+nm)}
     catch(err){e.target.disabled=false;er.textContent="Mã không đúng hoặc hồ sơ không còn.";er.hidden=false}};
+}
+/* switch this device to another profile (restore / link Safari with the home-screen app); optionally merge the current one into it */
+async function switchProfile(pid,secret,merge){
+  await setDoc(D("keys",pid),{secret,uids:arrayUnion(S.uid)},{merge:true});
+  const card=await getDoc(D("profiles",pid));if(!card.exists())throw{code:"not-found"};
+  const name=(card.data()||{}).name||"";
+  const old=merge&&S.me&&S.me.pid!==pid?{pid:S.me.pid,bills:S.bills.slice(),contacts:S.contacts.slice(),places:S.places.slice()}:null;
+  S.me={pid,secret};store("tn2.id",S.me);store("tn2.push",undefined);
+  if(old){
+    for(const b of old.bills){const nb={...b,people:(b.people||[]).map(p=>p.pid===old.pid?{...p,pid,name:name||p.name}:p),ownerPid:b.ownerPid===old.pid?pid:b.ownerPid};
+      if(nb.people.filter(p=>p.pid===pid).length>1)continue;saveBill(nb,b.members)}
+    for(const c of old.contacts)if(!c.hidden&&c.pid!==pid)W(setDoc(D("profiles",pid,"contacts",c.id),strip(c),{merge:true}));
+    for(const p of old.places)if(!p.archived)W(setDoc(D("profiles",pid,"places",p.id),strip(p),{merge:true}));
+  }
+  startApp();return name;
 }
 function startApp(){
   S.subs.forEach(u=>u());S.subs=[];S.mode="db";
@@ -1609,7 +1626,7 @@ function viewSettings(){
   <div class="sec"><h2>Nhắc nợ</h2></div><div class="set">${row("sRemind","Lịch nhắc",`Sau ${c.remindAfter} ngày, lặp lại mỗi ${c.remindEvery} ngày`)}</div>
   <div class="sec"><h2>AI</h2></div><div class="set">${row("sAI","API key Claude",ai.key?"Đã nhập · "+esc((AI_MODELS.find(m=>m[0]===ai.model)||AI_MODELS[0])[1])+(ai.web?" · tìm web":""):"Chưa nhập · chỉ lưu trên máy này")}</div>
   <div class="sec"><h2>Thông báo</h2></div><div class="set">${row("sPush","Thông báo trên máy này",esc(pushStatusText()))}</div>
-  <div class="sec"><h2>Thiết bị</h2></div><div class="set">${row("sDevice","Mã khôi phục","Dùng khi đổi máy hoặc cài lên màn hình chính")}</div>
+  <div class="sec"><h2>Thiết bị</h2></div><div class="set">${row("sLink","Liên kết Safari với app","Mở link bill trong Safari vẫn vào đúng hồ sơ này")}${row("sDevice","Mã khôi phục","Dùng khi đổi máy hoặc gộp hồ sơ")}</div>
   <div class="sec"><h2>Ứng dụng</h2></div><div class="set">
     ${row("sGuide","Hướng dẫn sử dụng","")}
     <button class="li" id="sUpdate"><span class="mid"><b>Phiên bản ${VERSION}</b><small>${upd.latest&&newer(upd.latest,VERSION)?"Có bản mới "+esc(upd.latest)+", bấm để cập nhật":upd.checking?"Đang kiểm tra…":upd.at?"Đã là bản mới nhất · kiểm tra lúc "+esc(upd.at):"Bấm để kiểm tra bản mới"}</small></span>${upd.latest&&newer(upd.latest,VERSION)?`<span class="badge b-warn">Cập nhật</span>`:`<span class="chev">${ic("right")}</span>`}</button></div>
@@ -1627,6 +1644,7 @@ bind.settings=m=>{
   $("#sRemind",m).onclick=()=>miniForm("Lịch nhắc nợ",`<div class="grid2"><div class="field"><label class="lbl" for="mf1">Nhắc sau (ngày)</label><input class="inp num" id="mf1" type="number" min="0" max="30" value="${cfg().remindAfter}"></div><div class="field"><label class="lbl" for="mf2">Lặp lại mỗi (ngày)</label><input class="inp num" id="mf2" type="number" min="1" max="30" value="${cfg().remindEvery}"></div></div>`,el=>savePriv({remindAfter:clamp($("#mf1",el).value,2,0,30),remindEvery:clamp($("#mf2",el).value,2,1,30)}));
   $("#sAI",m).onclick=openAISettings;
   $("#sDevice",m).onclick=openDevice;
+  $("#sLink",m).onclick=openLinkSafari;
   $("#sPush",m).onclick=openPush;
   $("#sGuide",m).onclick=openGuide;
   $("#sUpdate",m).onclick=()=>{if(upd.latest&&newer(upd.latest,VERSION))applyUpdate();else checkUpdate(true)};
@@ -1703,16 +1721,38 @@ function openAISettings(){
     catch(err){msg.textContent=aiErrText(err);msg.hidden=false;e.target.disabled=false;e.target.textContent="Lưu và thử"}};
   $("#aiDel",el).onclick=()=>{store("tn2.ai",undefined);store("tn.ai",undefined);closeSheet();render();toast("Đã xóa key khỏi máy này")};
 }
+function openLinkSafari(){
+  const link=shareBase()+"#me="+S.me.pid+"."+S.me.secret;const sa=isStandalone();
+  const el=openSheet("Liên kết Safari với app",`<div class="stack">
+    <p class="small" style="margin:0">iPhone tách riêng dữ liệu của app trên màn hình chính và Safari. Mở link dưới đây ${sa?"trong <b>Safari</b>":"trong <b>app Trưa Nay</b> hoặc trình duyệt khác"} một lần, hai bên sẽ dùng chung hồ sơ <b>${esc(myName())}</b>. Sau đó bấm link bill trong Zalo (chọn mở bằng Safari) cũng vào đúng hồ sơ này.</p>
+    ${sa?`<a class="btn mint block" href="${esc(link)}" target="_blank" rel="noopener">Mở trong Safari</a>`:""}
+    <button class="btn block ${sa?"":"mint"}" id="lsCopy">${ic("copy")} Chép link liên kết</button>
+    <p class="hint" style="margin:0">Link này giống mật khẩu: chỉ mở trên máy của bạn, đừng gửi cho người khác. Nếu Safari đã có hồ sơ khác, app sẽ hỏi có gộp dữ liệu sang hồ sơ này không.</p></div>`);
+  $("#lsCopy",el).onclick=()=>copyText(link,"Đã chép link liên kết. Dán vào thanh địa chỉ Safari.");
+}
+function openSwitch(pid,secret){
+  if(pid===myPid()){toast("Máy này đã dùng đúng hồ sơ đó rồi.");return}
+  const cur=myName();
+  const el=openSheet("Liên kết hồ sơ",`<div class="stack">
+    <p class="small" style="margin:0">Máy này đang dùng hồ sơ <b>${esc(cur)}</b>. Chuyển sang hồ sơ trong link để dùng chung với app?</p>
+    <button class="btn mint block" id="swMerge">Chuyển và gộp dữ liệu của ${esc(cur)}</button>
+    <p class="hint" style="margin:-4px 2px 0">Bill đã nhận, danh bạ và quán của ${esc(cur)} trên máy này được chuyển sang hồ sơ kia.</p>
+    <button class="btn block" id="swOnly">Chỉ chuyển, không gộp</button><button class="btn ghost" id="swNo">Hủy</button><p class="err" id="swErr" hidden></p></div>`);
+  const run=async m=>{try{const nm=await switchProfile(pid,secret,m);closeSheet();toast(m?"Đã gộp và chuyển sang "+nm:"Đã chuyển sang hồ sơ "+nm)}catch(e){const er=$("#swErr",el);er.textContent="Link không đúng hoặc đã cũ.";er.hidden=false}};
+  $("#swMerge",el).onclick=()=>run(true);$("#swOnly",el).onclick=()=>run(false);$("#swNo",el).onclick=closeSheet;
+}
 function openDevice(){
   const code=S.me.pid+"."+S.me.secret;
   const el=openSheet("Mã khôi phục",`<div class="stack">
     <p class="small" style="margin:0">Dùng mã này để mở hồ sơ trên máy khác, hoặc khi mở app từ màn hình chính lần đầu. Giữ kín như mật khẩu.</p>
     <div class="keyrow"><input class="inp num" id="dvCode" readonly value="${esc(code)}" type="password" aria-label="Mã khôi phục"><button class="btn" id="dvShow">Hiện</button></div>
     <button class="btn mint block" id="dvCopy">${ic("copy")} Chép mã</button>
+    <div class="keyrow"><input class="inp" id="dvOther" placeholder="Dán mã hoặc link của hồ sơ khác" autocomplete="off" autocapitalize="off"><button class="btn" id="dvSwitch">Chuyển</button></div>
     <button class="btn danger" id="dvOut">${ui.confirm==="out"?"Chắc chưa? Bấm lần nữa":"Đăng xuất khỏi máy này"}</button>
     <p class="hint" style="margin:0">Đăng xuất chỉ xóa hồ sơ khỏi máy này. Dữ liệu vẫn còn, nhập lại mã là dùng tiếp.</p></div>`);
   $("#dvShow",el).onclick=e=>{const i=$("#dvCode",el);i.type=i.type==="password"?"text":"password";e.target.textContent=i.type==="password"?"Hiện":"Ẩn"};
   $("#dvCopy",el).onclick=()=>copyText(code,"Đã chép mã khôi phục");
+  $("#dvSwitch",el).onclick=()=>{const raw=$("#dvOther",el).value.trim().replace(/^.*#me=/,"");const [pid,secret]=raw.split(".");if(!pid||!secret||pid.length<16){toast("Mã chưa đúng dạng.");return}openSwitch(pid,secret)};
   $("#dvOut",el).onclick=e=>{if(ui.confirm!=="out"){ui.confirm="out";e.target.textContent="Chắc chưa? Bấm lần nữa";return}store("tn2.id",undefined);location.reload()};
 }
 function openPlaces(){
@@ -1816,6 +1856,7 @@ function handleHash(){
   if((m=h.match(/#b=([a-z0-9]{16,40})/i)))openBillDetail(m[1]);
   else if((m=h.match(/#p=([a-z0-9]{16,40})(?:~(.*))?/i)))addFromLink(m[1],decodeURIComponent(m[2]||"Bạn mới"));
   else if((m=h.match(/#v=([a-z0-9]{16,40})/i))){ui.tab="eat";ui.eatView="vote";render();openPoll(m[1])}
+  else if((m=h.match(/#me=([a-z0-9]{16,40})\.([a-z0-9]{20,60})/i)))openSwitch(m[1],m[2]);
 }
 window.addEventListener("hashchange",()=>{if(S.mode==="db"&&location.hash){pendingHash=location.hash;handleHash()}});
 
