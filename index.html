@@ -229,9 +229,11 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .sheet-h{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0 10px;z-index:2}
 .sheet-h h3{font-size:1.05rem;font-weight:900}
 .x{border:0;background:var(--surface-2);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--muted)}
+.sheet-foot{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));z-index:3;display:flex;flex-direction:column;gap:6px;background:var(--bg);margin:12px -14px calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);box-shadow:0 -6px 14px -10px rgba(47,44,59,.25)}
 .qrimg{-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto;width:100%;max-width:300px;display:block;margin:0 auto;border-radius:12px}
 .toast{position:fixed;left:50%;bottom:calc(66px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.84rem;line-height:1.4;z-index:60;display:flex;gap:12px;align-items:center;justify-content:space-between;width:calc(100% - 28px);max-width:512px;box-shadow:var(--shadow)}
 .toast span{flex:1;min-width:0}
+body.sheet-open .toast{bottom:calc(128px + env(safe-area-inset-bottom,0px))}
 .toast button{flex:none;white-space:nowrap}
 .toast button{background:none;border:0;color:var(--peach);font-weight:700}
 .onb{max-width:420px;margin:10vh auto 0;display:flex;flex-direction:column;gap:12px}
@@ -313,7 +315,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.8.1", BUILD="07/10/2026";
+const VERSION="2.8.2", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -456,10 +458,10 @@ function openSheet(title,html,refresh,onClose){
   const root=$("#sheetRoot");
   root.innerHTML=`<div class="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><h3>${esc(title)}</h3><button class="x" aria-label="Đóng">✕</button></div><div class="sheet-b">${html}</div></div></div>`;
   const sc=root.firstChild;sc.onclick=e=>{if(e.target===sc)closeSheet()};$(".x",root).onclick=closeSheet;
-  sheetRefresh=refresh||null;sheetClose=onClose||null;document.body.style.overflow="hidden";
+  sheetRefresh=refresh||null;sheetClose=onClose||null;document.body.style.overflow="hidden";document.body.classList.add("sheet-open");
   return $(".sheet-b",root);
 }
-function closeSheet(){$("#sheetRoot").innerHTML="";sheetRefresh=null;if(sheetClose){const f=sheetClose;sheetClose=null;f()}document.body.style.overflow=""}
+function closeSheet(){$("#sheetRoot").innerHTML="";document.body.classList.remove("sheet-open");sheetRefresh=null;if(sheetClose){const f=sheetClose;sheetClose=null;f()}document.body.style.overflow=""}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$("#sheetRoot").firstChild)closeSheet()});
 async function copyText(t,msg="Đã chép"){try{await navigator.clipboard.writeText(t);toast(msg);return true}catch(e){toast("Chưa chép được, hãy chọn chữ rồi chép tay.");return false}}
 async function shareOrCopy(data,copyMsg){if(navigator.share){try{await navigator.share(data);return true}catch(e){if(e&&e.name==="AbortError")return false}}return copyText([data.text,data.url].filter(Boolean).join("\n"),copyMsg)}
@@ -988,7 +990,7 @@ function openBillEditor(id,preset={}){
     <div id="edPanel"></div>
     <label class="switch" id="edRoundRow"><span class="small">Làm tròn lên 1.000đ</span><input type="checkbox" id="edRound" ${ed.round?"checked":""}></label>
     <div class="preview" id="edPrev"></div><p class="err" id="edErr" hidden></p>
-    <button class="btn mint block" id="edSave">${b?"Lưu":"Lưu bill"}</button></div>`);
+    <div class="sheet-foot"><button class="btn mint block" id="edSave">${b?"Lưu":"Lưu bill"}</button></div></div>`);
   const nm=k=>{const p=cand.get(k);return p?(k===me?"Tôi":dn(p,b||{ownerPid:myPid()})):"?"};
   const drawPeople=()=>{
     const keys=[...cand.keys()].filter(k=>!q||ed.sel.includes(k)||norm(nm(k)).includes(norm(q)));
@@ -1191,10 +1193,9 @@ function openBillDetail(id,opt={}){
       <div class="total"><span class="muted small">Tổng</span><b class="num">${fmt(b.total)}</b></div>${feeLine(b)}
     </div>
     ${!bank?`<p class="hint">${esc(dn(v.payer,b))} chưa có tài khoản ngân hàng nên chưa tạo QR.</p>`:""}
-    <div class="stack" style="margin-top:10px">
-      <button class="btn mint block" id="dSend">${ic("send")} Gửi bill cho mọi người</button>
-      ${v.due&&bank&&v.iPay?`<button class="btn block" id="dGroup">${ic("qr")} Ảnh QR cả nhóm</button>`:""}
-      ${owner?`<div class="grid2"><button class="btn" id="dEdit">Sửa</button><button class="btn danger" id="dDel">${ui.confirm==="del"+id?"Bấm lần nữa":"Xóa"}</button></div>`:""}
+    <div class="sheet-foot">
+      <div class="row" style="flex-wrap:nowrap"><button class="btn mint" id="dSend" style="flex:1">${ic("send")} Gửi bill cho mọi người</button>${v.due&&bank&&v.iPay?`<button class="btn" id="dGroup" aria-label="Ảnh QR cả nhóm">${ic("qr")} QR nhóm</button>`:""}</div>
+      ${owner?`<div class="grid2"><button class="btn sm" id="dEdit">Sửa</button><button class="btn sm danger" id="dDel">${ui.confirm==="del"+id?"Bấm lần nữa để xóa":"Xóa"}</button></div>`:""}
     </div>`;
     const upd=fn=>{const nb={...b,people:b.people.map(p=>({...p})),shares:b.shares.map(s=>({...s}))};fn(nb);saveBill(nb,b.members)};
     $$("[data-pay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.pay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=true;s.paidAt=new Date().toISOString()});toast("Đã ghi nhận "+dn(P(b,k),b)+" trả",()=>upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null}))});
