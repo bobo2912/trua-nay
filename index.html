@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
-<script src="config.js?v=2.10.2"></script>
+<script src="config.js?v=2.10.3"></script>
 <script>(function(){var t="pastel";try{t=JSON.parse(localStorage.getItem("tn2.theme"))||"pastel"}catch(e){}document.documentElement.setAttribute("data-theme",t);var c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t]||"#F6F4FB";document.write('<meta name="theme-color" content="'+c+'">')})();</script>
 <style>
 /* Pastel, compact: lavender-mist ground, mint as the action colour, peach for the one playful moment (spin) */
@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.10.2", BUILD="07/10/2026";
+const VERSION="2.10.3", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -1206,7 +1206,9 @@ function openBillDetail(id,opt={}){
           else if(mine)acts=`${bank?`<button class="btn sm" data-qr="${esc(s.key)}">${ic("qr")} QR trả</button>`:""}${s.sentAt?"":`<button class="btn sm mint" data-sent="${esc(s.key)}">Tôi đã chuyển</button>`}`;
         }else if(!isP&&!s.paid&&s.sentAt&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Chưa nhận được</button><button class="btn sm mint" data-pay="${esc(s.key)}">${ic("check")} Đã nhận</button>`;
         else if(!isP&&s.paid&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Hoàn tác</button>`;
-        if(!inBill&&!p.pid&&!isP)acts+=`<button class="btn sm" data-claim="${esc(s.key)}">Là tôi</button>`;
+        if(!inBill&&!p.pid)acts+=`<button class="btn sm mint" data-claim="${esc(s.key)}">Là tôi</button>`;
+        if(mine&&!owner)acts+=`<button class="btn sm ghost" data-unclaim="${esc(s.key)}">Không phải tôi</button>`;
+        if(!inBill&&p.pid)st+=" · đã có người nhận";
         return `<div class="share-wrap"><div class="share">${avatar(dn(p,b))}<div class="mid"><b>${esc(dn(p,b))}</b><small>${st}${b.mode==="items"&&s.items?" · món "+fmtK(money(s.items)):""}${b.mode==="lines"?esc(dishesOf(b,s.key)):""}</small></div><div class="amt num">${fmt(s.amount)}</div></div>${acts?`<div class="share acts" style="border:0;padding:4px 0 0 38px">${acts}</div>`:""}</div>`}).join("")}
       <div class="total"><span class="muted small">Tổng</span><b class="num">${fmt(b.total)}</b></div>${feeLine(b)}
     </div>
@@ -1219,7 +1221,9 @@ function openBillDetail(id,opt={}){
     $$("[data-pay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.pay;{const pp=P(b,k),sh=b.shares.find(s=>s.key===k);if(pp&&pp.pid&&sh)pushNotify([pp.pid],"paid",{amount:sh.amount,place:b.placeName||b.title,url:"#b="+b.id})}upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=true;s.paidAt=new Date().toISOString()});toast("Đã ghi nhận "+dn(P(b,k),b)+" trả",()=>upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null}))});
     $$("[data-unpay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.unpay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null;s.sentAt=null})});
     $$("[data-sent]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.sent;upd(n=>{n.shares.find(s=>s.key===k).sentAt=new Date().toISOString()});const s=b.shares.find(s=>s.key===k);afterSent(v.payer,b,s?s.amount:0,1)});
-    $$("[data-claim]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.claim;upd(n=>{const p=n.people.find(p=>p.key===k);p.pid=myPid();p.name=myName()});toast("Đã nhận phần của bạn. Bill sẽ nằm trong tab Bill.")});
+    $$("[data-claim]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.claim;upd(n=>{const p=n.people.find(p=>p.key===k);p.pid=myPid();p.name=myName();if(k===n.payer&&S.card.bank)n.payerBank=S.card.bank});
+      toast(k===b.payer?"Đã nhận bạn là người trả. Bill nằm trong tab Bill, bạn theo dõi ai đã chuyển.":"Đã nhận phần của bạn. Bill nằm trong tab Bill.")});
+    $$("[data-unclaim]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.unclaim;upd(n=>{const p=n.people.find(p=>p.key===k);p.pid=null});toast("Đã bỏ nhận dòng này")});
     $$("[data-qr]",el).forEach(x=>x.onclick=()=>{const s=b.shares.find(s=>s.key===x.dataset.qr);openQR({person:P(b,s.key),bill:b,items:[{bill:b,share:s}],bank:b.payerBank})});
     $("#dSend",el).onclick=()=>sendBill(b);
     const g=$("#dGroup",el);if(g)g.onclick=()=>openGroupQR(b);
