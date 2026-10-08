@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.8.3", BUILD="07/10/2026";
+const VERSION="2.9.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -400,6 +400,14 @@ function hue(s){let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))%360;re
 function avatar(name,cls=""){const n=String(name||"?").trim()||"?";const parts=n.split(/\s+/);const ini=(parts.length>1?parts[0][0]+parts[parts.length-1][0]:n.slice(0,2)).toUpperCase();const h=hue(n);return `<span class="av ${cls}" style="background:hsl(${h} 60% 88%);color:hsl(${h} 35% 30%)" aria-hidden="true">${esc(ini)}</span>`}
 const mapsUrl=q=>"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
 const settled=s=>!!(s&&(s.paid||s.sentAt));
+/* payer side: new "Tôi đã chuyển" reports → badge + one-time in-app notice */
+function pendingConfirm(){const out=[];for(const b of S.bills){if(!isMe(P(b,b.payer)))continue;for(const s of b.shares||[])if(s.key!==b.payer&&s.sentAt&&!s.paid)out.push({b,s})}return out}
+function notifySent(){
+  const seen=new Set(recall("tn2.seenSent",[]));const fresh=pendingConfirm().filter(({b,s})=>!seen.has(b.id+"|"+s.key+"|"+s.sentAt));
+  if(!fresh.length)return;fresh.forEach(({b,s})=>seen.add(b.id+"|"+s.key+"|"+s.sentAt));store("tn2.seenSent",[...seen].slice(-200));
+  const first=fresh[0];const who=dn(P(first.b,first.s.key),first.b);const amt=sum(fresh.map(x=>x.s.amount));
+  setTimeout(()=>toast(fresh.length>1?`${fresh.length} người báo đã chuyển, tổng ${fmt(amt)}`:`${who} báo đã chuyển ${fmt(amt)} (${first.b.placeName||first.b.title})`,()=>go("debts"),"Xem",9000),400);
+}
 const store=(k,v)=>{try{v===undefined?localStorage.removeItem(k):localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const recall=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
 
@@ -452,10 +460,10 @@ function contactOfId(id){if(id.startsWith("p:"))return contactByPid(id.slice(2))
 
 /* ---------- toast & sheet ---------- */
 let toastT=0;
-function toast(msg,undo){
-  clearTimeout(toastT);const r=$("#toastRoot");r.innerHTML=`<div class="toast" role="status"><span></span>${undo?'<button>Hoàn tác</button>':""}</div>`;
-  r.querySelector("span").textContent=msg;if(undo)r.querySelector("button").onclick=()=>{undo();r.innerHTML=""};
-  toastT=setTimeout(()=>r.innerHTML="",undo?6000:2800);
+function toast(msg,undo,label="Hoàn tác",ms){
+  clearTimeout(toastT);const r=$("#toastRoot");r.innerHTML=`<div class="toast" role="status"><span></span>${undo?`<button>${esc(label)}</button>`:""}</div>`;
+  r.querySelector("span").textContent=msg;if(undo)r.querySelector("button").onclick=()=>{r.innerHTML="";undo()};
+  toastT=setTimeout(()=>r.innerHTML="",ms||(undo?6000:2800));
 }
 let sheetRefresh=null,sheetClose=null;
 function openSheet(title,html,refresh,onClose){
@@ -560,7 +568,7 @@ function startApp(){
   live(D("profiles",me,"private","polls"),s=>{S.pollIdx=s.exists()?[...(s.data().list||[])]:[];if(!S.loaded.polls){S.loaded.polls=true;migrateLocalPolls()}schedule()});
   live(C("profiles",me,"contacts"),s=>{S.contacts=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.contacts=true;loadCards();schedule()});
   live(C("profiles",me,"places"),s=>{S.places=s.docs.map(x=>({id:x.id,...x.data()}));schedule()});
-  live(query(C("profiles",me,"bills"),where("date",">=",since(400))),s=>{S.bills=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.bills=true;syncLinks();schedule()});
+  live(query(C("profiles",me,"bills"),where("date",">=",since(400))),s=>{S.bills=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.bills=true;syncLinks();notifySent();schedule()});
   const hadLink=!!pendingHash;
   $(".tabs").hidden=false;render();handleHash();checkUpdate();
   const guide=()=>{if(!recall("tn2.guided",false)){store("tn2.guided",true);if(!$("#sheetRoot").firstChild)openGuide()}};
@@ -583,7 +591,7 @@ const TABS=[["eat","Ăn gì"],["bills","Bill"],["debts","Công nợ"],["contacts
 function render(){
   if(S.mode!=="db")return;
   const a=document.activeElement,aid=a&&a.id,s0=a&&a.selectionStart,s1=a&&a.selectionEnd;
-  const due=debtGroups().filter(g=>g.dir==="in"&&needRemind(g)).length;
+  const due=debtGroups().filter(g=>g.dir==="in"&&needRemind(g)).length+pendingConfirm().length;
   $("#tabbar").innerHTML=TABS.map(([k,l])=>`<button data-tab="${k}" ${ui.tab===k?'aria-current="page"':""}>${ic(k)}<span>${l}</span>${k==="debts"&&due?`<span class="cnt num">${due}</span>`:""}</button>`).join("");
   $$("#tabbar [data-tab]").forEach(b=>b.onclick=()=>go(b.dataset.tab));
   $("#top").innerHTML=header();bindHeader();
@@ -1210,7 +1218,7 @@ function openBillDetail(id,opt={}){
     const upd=fn=>{const nb={...b,people:b.people.map(p=>({...p})),shares:b.shares.map(s=>({...s}))};fn(nb);saveBill(nb,b.members)};
     $$("[data-pay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.pay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=true;s.paidAt=new Date().toISOString()});toast("Đã ghi nhận "+dn(P(b,k),b)+" trả",()=>upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null}))});
     $$("[data-unpay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.unpay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null;s.sentAt=null})});
-    $$("[data-sent]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.sent;upd(n=>{n.shares.find(s=>s.key===k).sentAt=new Date().toISOString()});toast("Đã ghi nhận bạn chuyển tiền. "+dn(v.payer,b)+" sẽ thấy báo.")});
+    $$("[data-sent]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.sent;upd(n=>{n.shares.find(s=>s.key===k).sentAt=new Date().toISOString()});const s=b.shares.find(s=>s.key===k);afterSent(v.payer,b,s?s.amount:0,1)});
     $$("[data-claim]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.claim;upd(n=>{const p=n.people.find(p=>p.key===k);p.pid=myPid();p.name=myName()});toast("Đã nhận phần của bạn. Bill sẽ nằm trong tab Bill.")});
     $$("[data-qr]",el).forEach(x=>x.onclick=()=>{const s=b.shares.find(s=>s.key===x.dataset.qr);openQR({person:P(b,s.key),bill:b,items:[{bill:b,share:s}],bank:b.payerBank})});
     $("#dSend",el).onclick=()=>sendBill(b);
@@ -1347,6 +1355,12 @@ function setPaid(items,val){
     saveBill({...b,shares:b.shares.map(s=>keys.includes(s.key)?{...s,paid:val,paidAt:val?now:null,sentAt:val?s.sentAt||null:null}:s)},b.members)}
   return ()=>undo.forEach(b=>saveBill(b,b.members));
 }
+function afterSent(payer,b,amount,n){
+  const name=dn(payer,b);const c=payer.pid?contactByPid(payer.pid):payer.cid?contactById(payer.cid):null;const phone=payer.phone||(c&&c.phone)||(payer.pid&&(S.cards[payer.pid]||{}).phone)||"";
+  const text=`Mình đã chuyển ${fmt(amount)} tiền ${n>1?n+" bữa":"bữa "+(b.placeName||b.title)+" "+dLabel(b.date)} cho ${name} rồi nhé. Bạn kiểm tra giúp mình.`;
+  toast(`Đã báo đã chuyển. ${name} sẽ thấy khi mở app.`,async()=>{try{await navigator.clipboard.writeText(text)}catch(e){}
+    if(phone){window.open("https://zalo.me/"+phone,"_blank");toast("Đã chép lời nhắn, dán vào chat Zalo.")}else shareOrCopy({text},"Đã chép lời nhắn")},"Nhắn Zalo",9000);
+}
 function setSent(items){
   const byBill={};items.forEach(i=>(byBill[i.bill.id]=byBill[i.bill.id]||[]).push(i.share.key));const now=new Date().toISOString();
   for(const [bid,keys] of Object.entries(byBill)){const b=S.bills.find(x=>x.id===bid);if(!b)continue;saveBill({...b,shares:b.shares.map(s=>keys.includes(s.key)?{...s,sentAt:now}:s)},b.members)}
@@ -1354,7 +1368,7 @@ function setSent(items){
 function viewDebts(){
   const gs=debtGroups();const inT=sum(gs.filter(g=>g.dir==="in").map(g=>g.total)),outT=sum(gs.filter(g=>g.dir==="out").map(g=>g.total));
   let h=`<div class="sum2"><div class="in"><small>Người khác nợ tôi</small><b class="num">${fmt(inT)}</b></div><div class="out"><small>Tôi nợ</small><b class="num">${fmt(outT)}</b></div></div>`;
-  const pend=[];for(const b of S.bills){if(!isMe(P(b,b.payer)))continue;for(const s of b.shares||[])if(s.key!==b.payer&&s.sentAt&&!s.paid)pend.push({b,s})}
+  const pend=pendingConfirm();
   if(pend.length)h+=`<div class="sec"><h2>Đã báo chuyển</h2><small>Kiểm tra tài khoản rồi xác nhận</small></div><div class="card" style="padding-block:0"><div class="list">${pend.map(({b,s})=>`<div class="li">${avatar(dn(P(b,s.key),b))}<span class="mid"><b>${esc(dn(P(b,s.key),b))} · ${fmt(s.amount)}</b><small>${esc(b.placeName||b.title)} · ${esc(dLabel(b.date))}</small></span><span class="row" style="flex:none"><button class="btn sm ghost" data-cfno="${b.id}|${esc(s.key)}">Chưa nhận</button><button class="btn sm mint" data-cf="${b.id}|${esc(s.key)}">Đã nhận</button></span></div>`).join("")}</div></div>`;
   if(!gs.length)return h+(pend.length?"":`<div class="empty" style="margin-top:12px"><b>Không ai nợ ai</b>Phần chưa trả trong các bill sẽ hiện ở đây.</div>`);
   for(const dir of ["in","out"]){
@@ -1379,7 +1393,7 @@ bind.debts=m=>{
   $$("[data-remind]",m).forEach(b=>b.onclick=()=>{const g=f(b.dataset.remind);openQR({...g,remind:true})});
   $$("[data-payqr]",m).forEach(b=>b.onclick=()=>openQR({...f(b.dataset.payqr)}));
   $$("[data-allpaid]",m).forEach(b=>b.onclick=()=>{const g=f(b.dataset.allpaid);toast(`Đã ghi nhận ${g.name} trả ${fmt(g.total)}`,setPaid(g.items,true))});
-  $$("[data-sentall]",m).forEach(b=>b.onclick=()=>{const g=f(b.dataset.sentall);setSent(g.items);toast("Đã báo cho "+g.name)});
+  $$("[data-sentall]",m).forEach(b=>b.onclick=()=>{const g=f(b.dataset.sentall);setSent(g.items);afterSent(g.person,g.items[g.items.length-1].bill,g.total,g.items.length)});
   $$("[data-goto]",m).forEach(b=>b.onclick=()=>go(b.dataset.goto));
 };
 
