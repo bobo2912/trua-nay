@@ -181,6 +181,7 @@ textarea.inp{resize:vertical;min-height:60px}
 .peritem .val{font-size:.74rem;color:var(--muted);min-width:56px;text-align:right}
 .fees{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fees4{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px}
 
 /* debts */
 .sum2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -312,7 +313,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.7.0", BUILD="07/10/2026";
+const VERSION="2.8.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -928,15 +929,17 @@ async function removeBillFromList(b){
 }
 
 /* --- split maths --- */
+const feeAdj=ed=>money(ed.ship)+money(ed.svc)+money(ed.vat)-money(ed.disc);
+const f0=v=>v?fmtN(v):"";
 function calc(ed){
   const parts=ed.sel.slice();const res={total:0,rows:[],err:""};
   if(!parts.length){res.err="Chọn người ăn.";return res}
   const raw={},sub={};let total=0;
   if(ed.mode==="equal"){total=money(ed.total);parts.forEach(p=>raw[p]=total/parts.length)}
-  else if(ed.mode==="items"){let s=0;parts.forEach(p=>{sub[p]=money(ed.items[p]);s+=sub[p]});const adj=money(ed.ship)+money(ed.svc)-money(ed.disc);total=s+adj;parts.forEach(p=>raw[p]=s?sub[p]+adj*sub[p]/s:0);res.subtotal=s;res.adj=adj}
+  else if(ed.mode==="items"){let s=0;parts.forEach(p=>{sub[p]=money(ed.items[p]);s+=sub[p]});const adj=feeAdj(ed);total=s+adj;parts.forEach(p=>raw[p]=s?sub[p]+adj*sub[p]/s:0);res.subtotal=s;res.adj=adj}
   else if(ed.mode==="lines"){let s=0;parts.forEach(p=>sub[p]=0);
     (ed.lines||[]).forEach(l=>{const pr=money(l.price);if(!pr)return;const who=(l.who||[]).filter(k=>parts.includes(k));const tgt=who.length?who:parts;tgt.forEach(k=>sub[k]+=pr/tgt.length);s+=pr});
-    const adj=money(ed.ship)+money(ed.svc)-money(ed.disc);total=s+adj;parts.forEach(p=>raw[p]=s?sub[p]+adj*sub[p]/s:0);res.subtotal=s;res.adj=adj;
+    const adj=feeAdj(ed);total=s+adj;parts.forEach(p=>raw[p]=s?sub[p]+adj*sub[p]/s:0);res.subtotal=s;res.adj=adj;
     res.unassigned=(ed.lines||[]).filter(l=>money(l.price)&&!(l.who||[]).some(k=>parts.includes(k))).length}
   else{parts.forEach(p=>{raw[p]=money(ed.items[p]);total+=raw[p]})}
   const payerIn=parts.includes(ed.payer);const others=parts.filter(p=>!(payerIn&&p===ed.payer));const amt={};
@@ -968,8 +971,8 @@ function openBillEditor(id,preset={}){
   const b=id?S.bills.find(x=>x.id===id):null;
   const cand=candidates(b,preset.people||[]);
   const me="p_"+myPid();
-  const ed=b?{id:b.id,placeName:b.placeName||"",date:b.date,platform:b.platform||"quan",payer:b.payer,sel:(b.people||[]).map(p=>p.key),mode:b.mode,total:b.mode==="equal"?fmtN(b.total):"",items:Object.fromEntries((b.shares||[]).map(s=>[s.key,s.items||""])),ship:b.fees?fmtN(b.fees.ship):"",svc:b.fees?fmtN(b.fees.svc):"",disc:b.fees?fmtN(b.fees.disc):"",round:!!b.round}
-    :{id:null,placeName:preset.placeName||"",date:todayISO(),platform:"quan",payer:me,sel:[me,...(preset.people||[]).map(p=>p.key)],mode:"equal",total:"",items:{},ship:"",svc:"",disc:"",round:true};
+  const ed=b?{id:b.id,placeName:b.placeName||"",date:b.date,platform:b.platform||"quan",payer:b.payer,sel:(b.people||[]).map(p=>p.key),mode:b.mode,total:b.mode==="equal"?fmtN(b.total):"",items:Object.fromEntries((b.shares||[]).map(s=>[s.key,s.items||""])),ship:b.fees?f0(b.fees.ship):"",svc:b.fees?f0(b.fees.svc):"",vat:b.fees?f0(b.fees.vat):"",disc:b.fees?f0(b.fees.disc):"",round:!!b.round}
+    :{id:null,placeName:preset.placeName||"",date:todayISO(),platform:"quan",payer:me,sel:[me,...(preset.people||[]).map(p=>p.key)],mode:"equal",total:"",items:{},ship:"",svc:"",vat:"",disc:"",round:true};
   ed.sel=[...new Set(ed.sel)];
   ed.lines=b&&b.lines?b.lines.map(l=>({name:l.name,qty:l.qty||1,price:fmtN(l.price),who:[...(l.who||[])]})):[];ed.receiptTotal=b?b.receiptTotal||0:0;ed.totalTouched=!!b;ed.scanMsg="";
   let q="";
@@ -996,14 +999,15 @@ function openBillEditor(id,preset={}){
   };
   const explode=()=>{const out=[];ed.lines.forEach(l=>{const q=Math.max(1,l.qty||1);if(q>1&&money(l.price)){const unit=Math.round(money(l.price)/q);for(let i=0;i<q;i++)out.push({name:l.name,qty:1,price:fmtN(unit),who:i===0?[...l.who]:[]})}else out.push({...l,qty:1})});ed.lines=out};
   const linesSum=()=>sum(ed.lines.map(l=>money(l.price)));
-  const syncTotal=()=>{if(ed.mode==="equal"&&!ed.totalTouched&&ed.lines.length){ed.total=fmtN(ed.receiptTotal||linesSum());const t=$("#edTotal",el);if(t)t.value=ed.total}};
+  const syncTotal=()=>{if(ed.mode==="equal"&&!ed.totalTouched&&(ed.lines.length||feeAdj(ed))){const v=linesSum()+feeAdj(ed);ed.total=v>0?fmtN(v):"";const t=$("#edTotal",el);if(t)t.value=ed.total}};
   const drawPanel=()=>{
     $$("#edMode button",el).forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===ed.mode));
     $("#edRoundRow",el).hidden=ed.mode==="custom";
     const Pn=$("#edPanel",el);
     const num=(id,val,ph,lbl)=>`<input class="inp num" id="${id}" inputmode="numeric" pattern="[0-9]*" data-money value="${esc(val)}" placeholder="${ph}" aria-label="${lbl}" autocomplete="off">`;
-    const feesHTML=`<div class="fees">${num("edShip",ed.ship,"Phí giao","Phí giao")}${num("edSvc",ed.svc,"Phí khác","Phí khác")}${num("edDisc",ed.disc,"Giảm giá","Giảm giá")}</div>`;
-    const bindFees=()=>[["#edShip","ship"],["#edSvc","svc"],["#edDisc","disc"]].forEach(([s,k])=>{const i=$(s,Pn);if(i)i.oninput=()=>{ed[k]=i.value;drawPrev()}});
+    const fld=(id,val,lbl)=>`<div class="field"><label class="lbl" for="${id}">${lbl}</label>${num(id,val,"0",lbl)}</div>`;
+    const feesHTML=`<div class="fees4">${fld("edShip",ed.ship,"Phí giao")}${fld("edSvc",ed.svc,"Phí dịch vụ")}${fld("edVat",ed.vat,"VAT")}${fld("edDisc",ed.disc,"Giảm giá")}</div>`;
+    const bindFees=()=>[["#edShip","ship"],["#edSvc","svc"],["#edVat","vat"],["#edDisc","disc"]].forEach(([s,k])=>{const i=$(s,Pn);if(i)i.oninput=()=>{ed[k]=i.value;syncTotal();drawPrev()}});
     const scanHTML=`<div class="row between"><button class="btn sm" id="edScanBtn">${ic("camera")} Quét ảnh bill</button>${aiReady()?`<label class="switch small muted" style="gap:6px">Đọc bằng AI<input type="checkbox" id="edAIScan" ${prefs().aiScan?"checked":""}></label>`:""}</div><div id="edScan">${ed.scanMsg||""}</div>`;
     const bindScan=()=>{$("#edScanBtn",Pn).onclick=()=>$("#edScanFile",el).click();const a=$("#edAIScan",Pn);if(a)a.onchange=()=>store("tn2.prefs",{...prefs(),aiScan:a.checked});const eq=$("#edEqualAll",Pn);if(eq)eq.onclick=()=>{ed.mode="equal";ed.totalTouched=false;syncTotal();drawPanel()}};
     if(ed.mode==="equal"||ed.mode==="lines"){
@@ -1015,14 +1019,14 @@ function openBillEditor(id,preset={}){
           ${assign?`<div class="chips">${ed.sel.map(k=>`<button class="chip mini" data-ln="${i}" data-k="${esc(k)}" aria-pressed="${l.who.includes(k)}">${esc(short(k))}</button>`).join("")}${l.who.filter(k=>ed.sel.includes(k)).length>1?`<span class="small muted">chia ${l.who.filter(k=>ed.sel.includes(k)).length}</span>`:""}</div>`:""}</div>`).join("")}
         <button class="btn sm" id="lnAdd" style="align-self:flex-start">${ic("plus")} Thêm món</button>
         ${assign?feesHTML+`<p class="hint" style="margin:0">Bấm tên để gán món. Món gán nhiều người thì chia đều món đó, món chưa gán chia đều cả bàn.</p>`
-          :`<div class="field"><label class="lbl" for="edTotal">Tổng bill</label>${num("edTotal",ed.total,"Vd: 450000 hoặc 450","Tổng bill")}</div><p class="hint" style="margin:0">Danh sách món chỉ để lưu lại bill có gì, không bắt buộc. Tiền chia đều theo Tổng bill.</p>`}</div>`;
+          :feesHTML+`<div class="field"><label class="lbl" for="edTotal">Tổng phải trả</label>${num("edTotal",ed.total,"Vd: 450000 hoặc 450","Tổng phải trả")}</div><p class="hint" id="edBreak" style="margin:0"></p><p class="hint" style="margin:0">Món, phí, VAT, giảm giá để lưu lại bill có gì, không bắt buộc. Tiền chia đều theo Tổng phải trả.</p>`}</div>`;
       bindScan();
       $$("[data-lnn]",Pn).forEach(i=>i.oninput=()=>{ed.lines[+i.dataset.lnn].name=i.value});
       $$("[data-lnp]",Pn).forEach(i=>i.oninput=()=>{ed.lines[+i.dataset.lnp].price=i.value;syncTotal();drawPrev()});
       $$("[data-lnd]",Pn).forEach(b=>b.onclick=()=>{ed.lines.splice(+b.dataset.lnd,1);syncTotal();drawPanel()});
       $$("[data-ln]",Pn).forEach(b=>b.onclick=()=>{const l=ed.lines[+b.dataset.ln],k=b.dataset.k;l.who=l.who.includes(k)?l.who.filter(x=>x!==k):[...l.who,k];drawPanel()});
       $("#lnAdd",Pn).onclick=()=>{ed.lines.push({name:"",qty:1,price:"",who:[]});drawPanel();const ins=$$("[data-lnn]",Pn);ins[ins.length-1].focus()};
-      const t=$("#edTotal",Pn);if(t)t.oninput=()=>{ed.total=t.value;ed.totalTouched=true;drawPrev()};
+      const t=$("#edTotal",Pn);if(t)t.oninput=()=>{ed.total=t.value;ed.totalTouched=!!t.value;ed.totalFromBill=false;if(!t.value)syncTotal();drawPrev()};
       bindFees();drawPrev();return;
     }
     Pn.innerHTML=ed.sel.map(k=>`<div class="peritem"><span class="who">${avatar(nm(k))}<span>${esc(nm(k))}</span></span><input class="inp num" data-it="${esc(k)}" inputmode="numeric" pattern="[0-9]*" data-money placeholder="0" value="${esc(ed.items[k]||"")}" autocomplete="off" aria-label="Tiền của ${esc(nm(k))}"><span class="val num" data-iv="${esc(k)}"></span></div>`).join("")+
@@ -1032,6 +1036,9 @@ function openBillEditor(id,preset={}){
   };
   const drawPrev=()=>{
     const r=calc(ed);const pv=$("#edPrev",el);
+    const bk=$("#edBreak",el);if(bk){const s=linesSum(),parts=[];if(s)parts.push("Tiền món "+fmt(s));[["ship","phí giao"],["svc","phí DV"],["vat","VAT"]].forEach(([k,l])=>{if(money(ed[k]))parts.push("+ "+l+" "+fmt(money(ed[k])))});if(money(ed.disc))parts.push("− giảm "+fmt(money(ed.disc)));
+      const calcT=s+feeAdj(ed);const off=ed.totalTouched&&Math.abs(money(ed.total)-calcT)>=1000;
+      bk.textContent=(parts.length>1?parts.join(" ")+" = "+fmt(calcT):"")+(off?(ed.totalFromBill?" · Đang chia theo tổng trên bill. Món + phí chưa khớp, có thể thiếu món.":" · Đang chia theo số bạn nhập."):"")}
     if(ed.mode==="items"||ed.mode==="custom")ed.sel.forEach(k=>{const s=$(`[data-iv="${CSS.escape(k)}"]`,el);if(s)s.textContent=money(ed.items[k])?fmtK(money(ed.items[k])):""});
     if(r.err&&!r.rows.length){pv.innerHTML=`<span class="small muted">${esc(r.err)}</span>`;return}
     const payer=cand.get(ed.payer);const bank=bankFor(payer);
@@ -1060,7 +1067,7 @@ function openBillEditor(id,preset={}){
     const shares=r.rows.map(x=>{const o=old[x.key];const isP=x.key===ed.payer;const same=o&&o.amount===x.amount;
       return {key:x.key,amount:x.amount,items:ed.mode==="equal"||ed.mode==="lines"?"":String(ed.items[x.key]||""),paid:isP?true:(same?!!o.paid:false),paidAt:isP?((o&&o.paidAt)||now):(same?o.paidAt||null:null),sentAt:same?o.sentAt||null:null,remindedAt:o?o.remindedAt||null:null,remindCount:o?o.remindCount||0:0}});
     const bill={id:ed.id||newCode(20),title:ed.placeName||"Ăn trưa "+dLabel(ed.date),placeName:ed.placeName,placeId:pl?pl.id:null,date:ed.date,platform:ed.platform,mode:ed.mode,total:r.total,
-      fees:ed.mode==="items"||ed.mode==="lines"?{ship:money(ed.ship),svc:money(ed.svc),disc:money(ed.disc)}:null,
+      fees:ed.mode!=="custom"&&(feeAdj(ed)!==0||money(ed.disc))?{ship:money(ed.ship),svc:money(ed.svc),vat:money(ed.vat),disc:money(ed.disc)}:null,
       lines:ed.mode==="equal"?mergeLines(ed.lines.filter(l=>money(l.price)).map(l=>({name:l.name.trim()||"Món",qty:l.qty||1,price:money(l.price),who:[]}))):ed.mode==="lines"?ed.lines.filter(l=>money(l.price)).map(l=>({name:l.name.trim()||"Món",qty:l.qty||1,price:money(l.price),who:ed.mode==="lines"?l.who.filter(k=>ed.sel.includes(k)):[]})):null,receiptTotal:ed.receiptTotal||null,round:ed.mode!=="custom"&&ed.round,payer:ed.payer,people,shares,payerBank:bankFor(cand.get(ed.payer)),
       ownerPid:b?b.ownerPid:myPid(),createdAt:b?b.createdAt:now};
     saveBill(bill,b?b.members:[]);closeSheet();toast(b?"Đã lưu":"Đã tạo bill "+fmt(r.total));if(!b)setTimeout(()=>openBillDetail(bill.id,{fresh:true}),150);
@@ -1069,12 +1076,13 @@ function openBillEditor(id,preset={}){
     if(!r.items.length){ed.scanMsg=`<p class="err">Không nhận ra món nào. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại, hoặc nhập tay.</p>`;drawPanel();return}
     if(r.place&&!$("#edPlace",el).value.trim())$("#edPlace",el).value=r.place;
     if(r.date&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&r.date<=todayISO()&&daysAgo(r.date)<60)$("#edDate",el).value=r.date;
-    ed.lines=r.items.map(it=>({name:it.name,qty:it.qty||1,price:fmtN(it.price),who:[]}));ed.ship=r.ship?fmtN(r.ship):"";ed.svc=r.service?fmtN(r.service):"";ed.disc=r.discount?fmtN(r.discount):"";
-    ed.receiptTotal=r.total||(linesSum()+(r.ship||0)+(r.service||0)-(r.discount||0));
+    ed.lines=r.items.map(it=>({name:it.name,qty:it.qty||1,price:fmtN(it.price),who:[]}));ed.ship=f0(r.ship);ed.svc=f0(r.service);ed.vat=f0(r.vat);ed.disc=f0(r.discount);
+    ed.receiptTotal=r.total||(linesSum()+feeAdj(ed));
     if(ed.mode==="lines")explode();
-    ed.totalTouched=false;syncTotal();
+    if(r.total){ed.total=fmtN(r.total);ed.totalTouched=true;ed.totalFromBill=true}else{ed.totalTouched=false;ed.totalFromBill=false;syncTotal()}
     const nItems=sum(r.items.map(it=>it.qty||1));
-    ed.scanMsg=`<div class="preview small row between"><span>Đọc được <b>${nItems} món</b>, tổng bill <b>${fmt(ed.receiptTotal)}</b>. Kiểm tra lại tên và giá.</span>${ed.mode==="lines"?`<button class="btn sm" id="edEqualAll">Chia đều</button>`:""}</div>`;
+    const extra=[r.discount?"giảm "+fmt(r.discount):"",r.vat?"VAT "+fmt(r.vat):"",r.service?"phí DV "+fmt(r.service):"",r.ship?"phí giao "+fmt(r.ship):""].filter(Boolean).join(", ");
+    ed.scanMsg=`<div class="preview small row between"><span>Đọc được <b>${nItems} món</b>${extra?", "+extra:""}. Phải trả <b>${fmt(ed.receiptTotal)}</b>. Kiểm tra lại tên và giá.</span>${ed.mode==="lines"?`<button class="btn sm" id="edEqualAll">Chia đều</button>`:""}</div>`;
     drawPanel();
   };
   $("#edScanFile",el).onchange=async e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
@@ -1089,32 +1097,38 @@ function openBillEditor(id,preset={}){
 }
 /* --- free receipt reading: on-device OCR (tesseract.js) or pasted text --- */
 function parseReceiptText(text){
-  const out={place:"",date:null,items:[],ship:0,service:0,discount:0,total:0};
+  const out={place:"",date:null,items:[],ship:0,service:0,vat:0,discount:0,total:0};
   const priceRe=/(-?\s?\d{1,3}(?:[.,]\d{3})+|-?\d{4,7}|\d{1,4}(?:[.,]\d)?\s?k)\s*(?:đ|₫|vnđ|vnd|d)?\s*$/i;
   const toNum=s=>{s=s.replace(/\s/g,"").toLowerCase();const neg=s.startsWith("-");s=s.replace("-","");let n=/k$/.test(s)?Math.round(parseFloat(s.replace(",","."))*1000):parseInt(s.replace(/[.,]/g,""),10);return neg?-n:n};
   const lines=String(text||"").split(/\r?\n/).map(l=>l.replace(/[|_*•·]+/g," ").replace(/\s+/g," ").trim()).filter(Boolean);
-  let totals=[];
+  const finals=[],gross=[];let lastItemLine=-9;
   lines.forEach((raw,i)=>{
     const n=norm(raw);
     const dm=raw.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})/);if(dm&&!out.date){out.date=`${dm[3]}-${pad(+dm[2])}-${pad(+dm[1])}`}
     const pm=raw.match(priceRe);
-    if(!pm){if(!out.place&&i<3&&/[a-zà-ỹ]{2}/i.test(raw)&&!/hoa don|bill|receipt|dia chi|dt:|sdt|tel/.test(n))out.place=raw.slice(0,60);return}
+    if(!pm){
+      if(lastItemLine===i-1&&out.items.length&&!finals.length&&!gross.length&&/^[a-zà-ỹ][a-zà-ỹ\s,()\-]{1,40}$/i.test(raw)&&!/cam on|hen gap|wifi|dia chi|khach hang/.test(n)){const it=out.items[out.items.length-1];it.name=(it.name+" "+raw).slice(0,60);lastItemLine=i;return}
+      if(!out.place&&i<3&&/[a-zà-ỹ]{2}/i.test(raw)&&!/hoa don|bill|receipt|dia chi|dt:|sdt|tel/.test(n))out.place=raw.slice(0,60);return}
     const val=toNum(pm[1]);if(!val||Math.abs(val)>50000000)return;
     const label=n.slice(0,n.length-norm(pm[0]).length);
-    if(/tam tinh|subtotal|tien mat|tien thua|tien khach|khach dua|tra lai|change|cash|chuyen khoan|so luong|sl:/.test(label))return;
-    if(/(^|\s)(tong|total|thanh toan|phai tra|can tra)/.test(label)){totals.push(Math.abs(val));return}
+    if(/tam tinh|subtotal|tien mat|tien thua|tien khach|khach dua|tra lai|change|cash|chuyen khoan|so luong|sl:|tien hang|duoc ap dung|ap dung km|diem|tich luy/.test(label))return;
+    if(/phai tra|can thanh toan|tong thanh toan|thanh toan|can tra|tong cong|grand total/.test(label)){finals.push(Math.abs(val));return}
+    if(/(^|\s)(tong|total)/.test(label)){gross.push(Math.abs(val));return}
     if(/giam|khuyen mai|voucher|uu dai|discount|chiet khau|ma km/.test(label)){out.discount+=Math.abs(val);return}
     if(/phi giao|van chuyen|ship|delivery|giao hang/.test(label)){out.ship+=Math.abs(val);return}
-    if(/phi|vat|thue|phu thu|service|dich vu|dong goi/.test(label)){out.service+=Math.abs(val);return}
+    if(/(^|[\s:])(vat|v4t|val|vai)([\s:(%]|$)|thue|gtgt|tax/.test(label+" ")){out.vat+=Math.abs(val);return}
+    if(/phi|phu thu|service|dich vu|dong goi/.test(label)){out.service+=Math.abs(val);return}
     if(/ngay|gio|ban so|so hd|hoa don|ma don|order|dt|sdt|tel|wifi|ban:/.test(label))return;
     let name=raw.slice(0,raw.length-pm[0].length).trim();let qty=1;
     let q=name.match(/^(\d{1,2})\s*[x×*]?\s+(?=\D)/i)||name.match(/^[x×]\s?(\d{1,2})\s+/i);if(q){qty=+q[1];name=name.slice(q[0].length)}
     q=name.match(/\s[x×]\s?(\d{1,2})$/i);if(q){qty=+q[1];name=name.slice(0,q.index)}
+    q=name.match(/\s(\d{1,2})(?:[.,]0{1,2})?\s+\d{1,3}(?:[.,]\d{3})+$/);if(q&&qty===1){qty=+q[1];name=name.slice(0,q.index)}
+    q=name.match(/\s(\d{1,2})[.,]0{1,2}$/);if(q&&qty===1){qty=+q[1];name=name.slice(0,q.index)}
     name=name.replace(/(\s+[\d.,]+(?:\s?đ)?)+$/,"").replace(/^[\s:.\-–]+|[\s:.\-–]+$/g,"").trim();
     if(!/[a-zà-ỹ]{2}/i.test(name)||val<=0)return;
-    out.items.push({name:name.slice(0,60),qty,price:val});
+    out.items.push({name:name.slice(0,60),qty,price:val});lastItemLine=i;
   });
-  if(totals.length)out.total=Math.max(...totals);
+  out.total=finals.length?finals[finals.length-1]:gross.length?gross[gross.length-1]-out.discount+out.vat+out.service+out.ship:0;
   return out;
 }
 let ocrWorker=null;
@@ -1141,15 +1155,15 @@ async function scanReceipt(file){
   const prompt=`Ảnh này là hóa đơn hoặc ảnh chụp màn hình đơn hàng đồ ăn ở Việt Nam (quán, GrabFood, ShopeeFood, beFood...).
 Đọc từng dòng món. "price" là THÀNH TIỀN của dòng (đã nhân số lượng), số nguyên đồng (vd 45.000 → 45000; 45k → 45000).
 Nếu một dòng có số lượng > 1 thì vẫn giữ một dòng, ghi qty.
-Không đưa phí giao, phí dịch vụ, thuế, giảm giá, tổng vào items; ghi riêng vào ship (phí giao), service (phí dịch vụ, phí áp dụng, VAT, phụ thu), discount (tổng giảm giá, số dương), total (số tiền cuối cùng phải trả).
+Không đưa phí giao, phí dịch vụ, thuế, giảm giá, tổng vào items; ghi riêng vào ship (phí giao), service (phí dịch vụ, phí áp dụng, phụ thu), vat (thuế VAT/GTGT), discount (tổng giảm giá, khuyến mãi, voucher; số dương), total (số tiền cuối cùng phải trả).
 Không đọc được thì để 0 hoặc null. Không bịa món.
 Chỉ trả lời một JSON object:
-{"place":"Tên quán hoặc null","date":"YYYY-MM-DD hoặc null","items":[{"name":"Tên món","qty":1,"price":45000}],"ship":0,"service":0,"discount":0,"total":0}`;
+{"place":"Tên quán hoặc null","date":"YYYY-MM-DD hoặc null","items":[{"name":"Tên món","qty":1,"price":45000}],"ship":0,"service":0,"vat":0,"discount":0,"total":0}`;
   const r=await aiJSON(prompt,{images:[{media_type:"image/jpeg",data}],maxTokens:2000});
   const num=v=>Math.max(0,Math.round(+v||0));
   const items=(Array.isArray(r&&r.items)?r.items:[]).map(it=>({name:String(it.name||"").trim().slice(0,60),qty:num(it.qty)||1,price:num(it.price)})).filter(it=>it.name&&it.price>0);
   if(!items.length)throw{code:"no_items"};
-  return {place:r.place?String(r.place).slice(0,60):"",date:r.date||null,items,ship:num(r.ship),service:num(r.service),discount:num(r.discount),total:num(r.total)};
+  return {place:r.place?String(r.place).slice(0,60):"",date:r.date||null,items,ship:num(r.ship),service:num(r.service),vat:num(r.vat),discount:num(r.discount),total:num(r.total)};
 }
 
 /* --- detail (own bills, or any bill opened by link) --- */
@@ -1174,7 +1188,7 @@ function openBillDetail(id,opt={}){
         }else if(!isP&&s.paid&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Hoàn tác</button>`;
         if(!inBill&&!p.pid&&!isP)acts+=`<button class="btn sm" data-claim="${esc(s.key)}">Là tôi</button>`;
         return `<div class="share-wrap"><div class="share">${avatar(dn(p,b))}<div class="mid"><b>${esc(dn(p,b))}</b><small>${st}${b.mode==="items"&&s.items?" · món "+fmtK(money(s.items)):""}${b.mode==="lines"?esc(dishesOf(b,s.key)):""}</small></div><div class="amt num">${fmt(s.amount)}</div></div>${acts?`<div class="share acts" style="border:0;padding:4px 0 0 38px">${acts}</div>`:""}</div>`}).join("")}
-      <div class="total"><span class="muted small">Tổng</span><b class="num">${fmt(b.total)}</b></div>
+      <div class="total"><span class="muted small">Tổng</span><b class="num">${fmt(b.total)}</b></div>${feeLine(b)}
     </div>
     ${!bank?`<p class="hint">${esc(dn(v.payer,b))} chưa có tài khoản ngân hàng nên chưa tạo QR.</p>`:""}
     <div class="stack" style="margin-top:10px">
@@ -1196,6 +1210,9 @@ function openBillDetail(id,opt={}){
   draw();
   if(opt.fresh)setTimeout(()=>toast("Bấm Gửi bill để gửi link và số tiền vào nhóm Zalo."),300);
 }
+function feeLine(b){const f=b.fees;if(!f)return"";const adj=(f.ship||0)+(f.svc||0)+(f.vat||0)-(f.disc||0);const p=[];
+  p.push("Tiền món "+fmt(b.total-adj));if(f.ship)p.push("phí giao "+fmt(f.ship));if(f.svc)p.push("phí DV "+fmt(f.svc));if(f.vat)p.push("VAT "+fmt(f.vat));if(f.disc)p.push("giảm "+fmt(f.disc));
+  return p.length>1?`<p class="hint" style="margin:6px 0 0">${esc(p.join(" · "))}</p>`:""}
 function mergeLines(ls){const m=new Map();(ls||[]).forEach(l=>{const k=norm(l.name);const o=m.get(k);if(o){o.qty+=l.qty||1;o.price+=+l.price||0}else m.set(k,{...l,qty:l.qty||1,price:+l.price||0,who:[]})});return [...m.values()]}
 function dishesOf(b,key){
   const keys=(b.people||[]).map(p=>p.key);const out=[];
