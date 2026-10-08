@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
-<script src="config.js?v=2.12.1"></script>
+<script src="config.js?v=2.13.0"></script>
 <script>(function(){var t="pastel";try{t=JSON.parse(localStorage.getItem("tn2.theme"))||"pastel"}catch(e){}document.documentElement.setAttribute("data-theme",t);var c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t]||"#F6F4FB";document.write('<meta name="theme-color" content="'+c+'">')})();</script>
 <style>
 /* Pastel, compact: lavender-mist ground, mint as the action colour, peach for the one playful moment (spin) */
@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.12.1", BUILD="08/10/2026";
+const VERSION="2.13.0", BUILD="08/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -529,8 +529,36 @@ function deleteBill(b){
 
 /* ---------- boot & identity ---------- */
 const fbReady=()=>!!(FB&&FB.apiKey&&FB.projectId&&!/^DAN_/.test(FB.apiKey));
+/* in-app browsers (Zalo, Facebook, Messenger, Instagram, Line) keep their own storage: offer to jump to Safari / the default browser */
+const UA=navigator.userAgent||"";
+const inAppBrowser=()=>/Zalo|FBAN|FBAV|FB_IAB|Messenger|Instagram|Line\//i.test(UA);
+const isIOS=()=>/iPhone|iPad|iPod/.test(UA)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+function externalUrl(){const h=(pendingHash||location.hash||"").replace(/^#/,"");return location.origin+location.pathname+(h?"?h="+encodeURIComponent(h):"")}
+function openExternal(){const u=externalUrl();
+  if(isIOS())location.href="x-safari-"+u;
+  else location.href="intent://"+u.replace(/^https?:\/\//,"")+"#Intent;scheme=https;S.browser_fallback_url="+encodeURIComponent(u)+";end";}
+function renderInAppGate(go){
+  $(".tabs").hidden=true;$("#top").innerHTML="";const br=isIOS()?"Safari":"trình duyệt";
+  $("#main").innerHTML=`<div class="onb">
+    <div><h2>Trưa Nay</h2><p class="muted" style="margin:4px 0 0">Bạn đang mở trong ${/Zalo/i.test(UA)?"Zalo":"trình duyệt của ứng dụng"}.</p></div>
+    <div class="card stack"><b>Mở bằng ${br} để vào đúng hồ sơ của bạn</b>
+      <button class="btn mint block" id="gwOpen">Mở bằng ${br}</button>
+      <p class="hint" style="margin:0" id="gwHint">Nếu không chuyển được: bấm <b>⋯</b> ở góc trên → <b>Mở bằng trình duyệt</b>.</p>
+      <button class="btn block" id="gwCopy">${ic("copy")} Chép link</button></div>
+    <button class="btn ghost" id="gwStay">Tiếp tục ở đây</button></div>`;
+  $("#gwOpen").onclick=()=>{openExternal();setTimeout(()=>{const h=$("#gwHint");if(h)h.style.color="var(--ink)"},1200)};
+  $("#gwCopy").onclick=()=>copyText(location.origin+location.pathname+(pendingHash||location.hash||""),"Đã chép link. Dán vào "+br+".");
+  $("#gwStay").onclick=()=>{try{sessionStorage.setItem("tn2.stay","1")}catch(e){}go()};
+}
 async function boot(){
-  if(/[?&]v=/.test(location.search))history.replaceState(null,"",location.pathname+location.hash);
+  const qh=new URLSearchParams(location.search).get("h");
+  if(qh){pendingHash="#"+qh;history.replaceState(null,"",location.pathname+pendingHash)}
+  else if(/[?&]v=/.test(location.search))history.replaceState(null,"",location.pathname+location.hash);
+  let stay=false;try{stay=sessionStorage.getItem("tn2.stay")==="1"}catch(e){}
+  if(inAppBrowser()&&!stay&&!isStandalone()){renderInAppGate(boot2);return}
+  boot2();
+}
+async function boot2(){
   if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
   renderLoading("Đang kết nối…");
   if(!fbReady()){renderLoading("Chưa điền cấu hình Firebase trong config.js.");return}
