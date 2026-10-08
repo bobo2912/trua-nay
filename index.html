@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
-<script src="config.js"></script>
+<script src="config.js?v=2.10.2"></script>
 <script>(function(){var t="pastel";try{t=JSON.parse(localStorage.getItem("tn2.theme"))||"pastel"}catch(e){}document.documentElement.setAttribute("data-theme",t);var c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t]||"#F6F4FB";document.write('<meta name="theme-color" content="'+c+'">')})();</script>
 <style>
 /* Pastel, compact: lavender-mist ground, mint as the action colour, peach for the one playful moment (spin) */
@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.10.1", BUILD="07/10/2026";
+const VERSION="2.10.2", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -1357,7 +1357,7 @@ function setPaid(items,val){
   return ()=>undo.forEach(b=>saveBill(b,b.members));
 }
 /* ---------- push notifications (Cloudflare Worker sends them) ---------- */
-const PUSH=()=>(window.PUSH_URL||"").replace(/\/+$/,"");
+const PUSH=()=>(window.PUSH_URL||"https://trua-nay-push.itunes171193.workers.dev").replace(/\/+$/,"");
 const isStandalone=()=>matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
 const pushSupported=()=>"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
 function pushStatusText(){
