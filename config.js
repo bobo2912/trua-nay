@@ -9,4 +9,4 @@ window.FIREBASE_CONFIG = {
 };
 
 // Địa chỉ máy chủ thông báo (Cloudflare Worker). Để trống nếu chưa thiết lập.
-window.PUSH_URL = "";
+window.PUSH_URL = "https://trua-nay-push.itunes171193.workers.dev";
