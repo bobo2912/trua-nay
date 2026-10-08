@@ -242,6 +242,7 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .ln .inp{min-height:32px;padding:4px 8px;background:var(--surface)}
 .chip.mini{min-height:24px;padding:2px 9px;font-size:.74rem;background:var(--surface)}
 .chip.mini[aria-pressed="true"]{background:var(--mint);color:var(--mint-ink)}
+.loc{display:flex;align-items:center;gap:4px;min-width:0}.loc svg{width:14px;height:14px;flex:none}.loc span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .su-dots{display:flex;align-items:center;gap:5px}
 .su-dots i{width:22px;height:5px;border-radius:3px;background:var(--line)}
 .su-dots i.on{background:var(--mint)}.su-dots i.done{background:var(--mint-soft)}
@@ -311,7 +312,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.6.0", BUILD="07/10/2026";
+const VERSION="2.7.0", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -412,7 +413,7 @@ function drawQR(ctx,text,x,y,size,dark="#2F2C3B"){
 }
 
 /* ---------- state ---------- */
-const S={uid:null,me:recall("tn2.id",null),card:{},priv:{},contacts:[],places:[],bills:[],cards:{},mode:"loading",err:"",subs:[],loaded:{}};
+const S={pollIdx:[],uid:null,me:recall("tn2.id",null),card:{},priv:{},contacts:[],places:[],bills:[],cards:{},mode:"loading",err:"",subs:[],loaded:{}};
 const ui={tab:"eat",eatView:"spin",spinSrc:null,fTags:[],fPrice:0,fDist:"",avoid:true,spinning:false,spinResult:null,
   aiText:"",aiMood:[],aiBusy:false,aiRes:null,aiErr:"",aiCtl:null,dish:"",nearBusy:false,nearRes:null,nearErr:"",nearCtl:null,nearWeb:false,pos:null,posErr:"",
   billFilter:"all",debtView:"open",openPairs:new Set(),cq:"",confirm:null};
@@ -544,6 +545,7 @@ function startApp(){
   const live=(q,fn)=>S.subs.push(onSnapshot(q,fn,e=>{if(e&&e.code==="permission-denied"){S.err="Firebase từ chối đọc. Cập nhật Rules mới theo hướng dẫn.";schedule()}}));
   live(D("profiles",me),s=>{S.card=s.exists()?{...s.data()}:{};S.loaded.card=true;schedule()});
   live(D("profiles",me,"private","settings"),s=>{S.priv=s.exists()?{...s.data()}:{};schedule()});
+  live(D("profiles",me,"private","polls"),s=>{S.pollIdx=s.exists()?[...(s.data().list||[])]:[];if(!S.loaded.polls){S.loaded.polls=true;migrateLocalPolls()}schedule()});
   live(C("profiles",me,"contacts"),s=>{S.contacts=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.contacts=true;loadCards();schedule()});
   live(C("profiles",me,"places"),s=>{S.places=s.docs.map(x=>({id:x.id,...x.data()}));schedule()});
   live(query(C("profiles",me,"bills"),where("date",">=",since(400))),s=>{S.bills=s.docs.map(x=>({id:x.id,...x.data()}));S.loaded.bills=true;syncLinks();schedule()});
@@ -600,10 +602,11 @@ const shareBase=()=>location.origin+location.pathname;
 function viewEat(){
   const lb=billsSorted()[0];
   const head=`<div class="hello"><div><h2>Trưa nay ăn gì?</h2><p>${lb?`Lần trước: ${esc(lb.placeName||lb.title)}, ${esc(dLong(lb.date).toLowerCase())}`:"Quay số, hỏi AI hoặc rủ cả nhóm bình chọn"}</p></div></div>`;
-  const views=[["spin","Quay số"],["ai","Gợi ý"],["near","Gần đây"],["vote","Bình chọn"]];
+  if(ui.eatView==="ai"||ui.eatView==="near")ui.eatView="suggest";
+  const views=[["spin","Quay số"],["suggest","Gợi ý"],["vote","Bình chọn"]];
   const sub=`<div class="seg" style="margin-top:10px">${views.map(([k,l])=>`<button data-ev="${k}" aria-pressed="${ui.eatView===k}">${l}</button>`).join("")}</div>`;
   const n=setupDone();const card=n<4&&!recall("tn2.setupLater",false)?`<div class="card row between" style="margin-top:10px"><span class="small"><b>Hoàn tất thiết lập</b> · ${n}/4<br><span class="muted">Ngân hàng, Zalo, địa chỉ, sở thích</span></span><span class="row"><button class="btn sm ghost" id="suHide">Để sau</button><button class="btn sm mint" id="suGo">Tiếp tục</button></span></div>`:"";
-  return head+card+sub+`<div style="margin-top:10px">${({spin:eatSpin,ai:eatAI,near:eatNear,vote:eatVote})[ui.eatView]()}</div>`;
+  return head+card+sub+`<div style="margin-top:10px">${({spin:eatSpin,suggest:eatSuggest,vote:eatVote})[ui.eatView]()}</div>`;
 }
 bind.eat=m=>{
   $$("[data-ev]",m).forEach(b=>b.onclick=()=>{ui.eatView=b.dataset.ev;render()});
@@ -613,7 +616,7 @@ bind.eat=m=>{
   $$("[data-newpoll]",m).forEach(b=>b.onclick=()=>openPollEditor(b.dataset.newpoll?[{name:b.dataset.newpoll,placeId:b.dataset.pid||null}]:[]));
   $$("[data-eatnow]",m).forEach(b=>b.onclick=()=>openBillEditor(null,{placeName:b.dataset.eatnow}));
   $$("[data-addplace]",m).forEach(b=>b.onclick=()=>{const o=JSON.parse(b.dataset.addplace);openPlaceEditor(null,o)});
-  ({spin:bindSpin,ai:bindAI,near:bindNear,vote:bindVote})[ui.eatView](m);
+  ({spin:bindSpin,suggest:bindSuggest,vote:bindVote})[ui.eatView](m);
 };
 function placeMaps(p){return mapsUrl(p.address?p.name+" "+p.address:p.name+" "+(cfg().area||""))}
 function placeMeta(p){if(!p)return"";const le=lastEaten();return [(p.tags||[]).map(t=>TAGS[t]).join(", "),PRICE[p.price],DIST[p.dist],agoTxt(daysAgo(placeLast(p,le)))].filter(Boolean).join(" · ")}
@@ -684,58 +687,9 @@ function insights(){
   if(never.length)out.push("Chưa thử: "+never.map(p=>p.name).join(", "));
   return out;
 }
-const MOODS=["Trời mưa","Nắng nóng","Ăn nhẹ","Ăn no","Dưới 50k","Healthy","Món lạ","Gọi giao"];
-function eatAI(){
-  const ins=insights();
-  let h=ins.length?`<div class="card small stack" style="gap:4px">${ins.map(t=>`<div>${esc(t)}</div>`).join("")}</div>`:"";
-  if(!aiReady())return h+`<div class="empty"><b>Chưa có API key</b>Nhập API key Claude trong Cài đặt để AI gợi ý.<div style="margin-top:10px"><button class="btn mint" data-goto="settings">Mở Cài đặt</button></div></div>`;
-  h+=`<div class="card stack" style="margin-top:8px"><div class="chips">${MOODS.map(x=>`<button class="chip" data-mood="${esc(x)}" aria-pressed="${ui.aiMood.includes(x)}">${esc(x)}</button>`).join("")}</div>
-    <input class="inp" id="aiText" placeholder="Thêm ý, vd: 6 người, 1 người ăn chay" value="${esc(ui.aiText)}" autocomplete="off">
-    ${ui.aiBusy?`<button class="btn block" id="aiStop">Dừng</button>`:`<button class="btn mint block" id="aiGo">${ic("spark")} Gợi ý</button>`}</div>`;
-  if(ui.aiBusy)h+=`<div class="thinking"><i></i><i></i><i></i> Đang nghĩ…</div>`;
-  if(ui.aiErr)h+=`<p class="err" style="margin-top:8px">${esc(ui.aiErr)}</p>`;
-  if(ui.aiRes){h+=`<div class="stack" style="margin-top:8px">${ui.aiRes.note?`<p class="small muted" style="margin:0 2px">${esc(ui.aiRes.note)}</p>`:""}${(ui.aiRes.picks||[]).map(p=>{const pl=p.placeId&&S.places.find(x=>x.id===p.placeId);const nm=pl?pl.name:p.name;
-    return `<div class="pick"><div class="row between"><b>${esc(nm)}</b>${pl?`<span class="badge b-ok">Quán của tôi</span>`:`<span class="badge b-butter">Mới</span>`}</div><p>${esc([p.dish,p.why].filter(Boolean).join(" · "))}</p>
-    <div class="row">${pl?`<a class="btn sm" target="_blank" rel="noopener" href="${esc(placeMaps(pl))}">${ic("map")} Bản đồ</a>`:`<a class="btn sm" target="_blank" rel="noopener" href="${esc(nearMapsUrl(nm))}">${ic("map")} Tìm</a><button class="btn sm" data-addplace="${esc(JSON.stringify({name:nm,note:p.dish||""}))}">${ic("plus")} Lưu quán</button>`}<button class="btn sm" data-newpoll="${esc(nm)}" data-pid="${pl?pl.id:""}">Bình chọn</button><button class="btn sm mint" data-eatnow="${esc(nm)}">Chốt</button></div></div>`}).join("")}</div>`}
-  return h;
-}
-function bindAI(m){
-  $$("[data-mood]",m).forEach(b=>b.onclick=()=>{const x=b.dataset.mood;ui.aiMood=ui.aiMood.includes(x)?ui.aiMood.filter(y=>y!==x):[...ui.aiMood,x];render()});
-  const t=$("#aiText",m);if(t)t.oninput=()=>ui.aiText=t.value;
-  const g=$("#aiGo",m);if(g)g.onclick=askAI;
-  const s=$("#aiStop",m);if(s)s.onclick=()=>ui.aiCtl&&ui.aiCtl.abort();
-}
-function groupContext(){
-  const le=lastEaten();const d=new Date();
-  return {thoi_gian:WDL[d.getDay()]+" "+dLabel(todayISO())+" "+pad(d.getHours())+":"+pad(d.getMinutes()),khu_vuc:cfg().area||"chưa nhập",so_thich:(S.priv.likes||[]).map(t=>TAGS[t]),khong_an_duoc:S.priv.dislikes||"",
-    quan_hay_an:places().map(p=>({id:p.id,ten:p.name,loai:(p.tags||[]).map(t=>TAGS[t]),gia:PRICE[p.price]||"",an_lan_cuoi:agoTxt(daysAgo(placeLast(p,le))),ghi_chu:p.note||""})).slice(0,80),
-    bua_gan_day:billsSorted().slice(0,10).map(b=>({ngay:dLong(b.date),quan:b.placeName||b.title,moi_suat:Math.round(b.total/((b.shares||[]).length||1))}))};
-}
-async function askAI(){
-  if(!aiReady())return;
-  ui.aiBusy=true;ui.aiErr="";ui.aiRes=null;ui.aiCtl=new AbortController();render();
-  const want=[...ui.aiMood,ui.aiText.trim()].filter(Boolean).join("; ")||"không có yêu cầu đặc biệt";
-  const prompt=`Bạn giúp chọn món ăn trưa hôm nay cho người dùng ở Việt Nam.
-Dữ liệu (JSON):
-${JSON.stringify(groupContext())}
-
-Mong muốn: ${want}
-
-Gợi ý 4 lựa chọn. Quy tắc:
-- Ưu tiên quán trong "quan_hay_an", ghi đúng "id" vào placeId.
-- Ưu tiên loại món trong "so_thich"; tuyệt đối tránh món có thứ trong "khong_an_duoc".
-- Tránh quán vừa ăn 1-3 ngày; nếu ăn lặp một loại món thì đổi loại khác.
-- Tối đa 2 gợi ý ngoài danh sách (placeId null): chỉ nêu món, hoặc tên quán nổi tiếng bạn khá chắc có thật ở khu vực; không bịa địa chỉ.
-- "why" tiếng Việt, dưới 15 từ.
-Chỉ trả lời một JSON object:
-{"note":"một câu ngắn","picks":[{"placeId":"abc","name":"Tên quán hoặc món","dish":"Món nên gọi","why":"Lý do"}]}`;
-  try{const r=await aiJSON(prompt,{signal:ui.aiCtl.signal,maxTokens:1000});if(!r||!Array.isArray(r.picks))throw{code:"invalid_json"};
-    r.picks=r.picks.filter(p=>p&&(p.name||p.placeId)).slice(0,6).map(p=>({...p,placeId:S.places.some(x=>x.id===p.placeId)?p.placeId:null,name:String(p.name||"")}));ui.aiRes=r}
-  catch(e){ui.aiErr=aiErrText(e)}
-  ui.aiBusy=false;render();
-}
-
-/* --- near (location) --- */
+/* --- suggest: history + Google Maps + AI (merged "Gợi ý" and "Gần đây") --- */
+const SUG_CHIPS=[["Bún/Phở","dish"],["Cơm","dish"],["Mì","dish"],["Đồ Hàn","dish"],["Đồ Nhật","dish"],["Healthy","dish"],["Chay","dish"],["Ăn nhẹ","mood"],["Ăn no","mood"],["Dưới 50k","mood"],["Trời mưa","mood"],["Gọi giao","mood"]];
+function sugMapsQuery(){const t=ui.aiText.trim();if(t)return t;const d=ui.aiMood.find(x=>(SUG_CHIPS.find(c=>c[0]===x)||[])[1]==="dish");return d||"quán ăn trưa"}
 function nearMapsUrl(q){
   q=q||"quán ăn trưa";
   if(ui.pos)return `https://www.google.com/maps/search/${encodeURIComponent(q)}/@${ui.pos.lat},${ui.pos.lng},16z`;
@@ -747,54 +701,72 @@ function locate(){
   navigator.geolocation.getCurrentPosition(p=>{ui.pos={lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5),acc:Math.round(p.coords.accuracy)};ui.posErr="";render()},
     e=>{ui.posErr=e.code===1?"Bạn chưa cho phép định vị. Bật lại trong cài đặt trình duyệt.":"Chưa lấy được vị trí, thử lại.";render()},{enableHighAccuracy:true,timeout:12000,maximumAge:300000});
 }
-function eatNear(){
-  const useLoc=prefs().useLoc;const web=aiCfg().web;
+function eatSuggest(){
+  const ins=insights();const useLoc=prefs().useLoc;const web=aiCfg().web;
   if(useLoc&&!ui.pos&&!ui.posErr)setTimeout(locate,0);
   const where=ui.pos?`Vị trí hiện tại (±${ui.pos.acc}m)`:(cfg().area||"");
   let h=`<div class="card stack">
-    <input class="inp" id="nDish" placeholder="Món muốn ăn, vd: bún chả" value="${esc(ui.dish)}" autocomplete="off">
-    <div class="chips">${["Bún chả","Phở","Cơm tấm","Bún bò","Mì cay","Cơm văn phòng","Đồ Hàn","Chay"].map(d=>`<button class="chip" data-dish="${esc(d)}" aria-pressed="${ui.dish===d}">${esc(d)}</button>`).join("")}</div>
-    <div class="row between small"><span class="muted">${ic("map")} ${esc(where||"Chưa có vị trí")}</span>${useLoc?`<button class="btn sm ghost" id="nLoc">${ic("gps")} Lấy lại</button>`:`<button class="btn sm ghost" data-goto="settings">Bật định vị</button>`}</div>
+    <input class="inp" id="sgText" placeholder="Muốn ăn gì? vd: bún chả, đồ nóng" value="${esc(ui.aiText)}" autocomplete="off" enterkeyhint="search">
+    <div class="chips">${SUG_CHIPS.map(([x])=>`<button class="chip" data-mood="${esc(x)}" aria-pressed="${ui.aiMood.includes(x)}">${esc(x)}</button>`).join("")}</div>
+    <div class="row between small"><span class="muted loc">${ic("map")}<span>${esc(where||"Chưa có vị trí")}</span></span>${useLoc?`<button class="btn sm ghost" id="nLoc">${ic("gps")} Lấy lại</button>`:`<button class="btn sm ghost" data-goto="settings">${where?"Dùng định vị":"Nhập địa chỉ"}</button>`}</div>
     ${ui.posErr?`<p class="hint" style="margin:0">${esc(ui.posErr)}</p>`:""}
-    <div class="grid2"><a class="btn mint" id="nMaps" target="_blank" rel="noopener" href="${esc(nearMapsUrl(ui.dish))}">${ic("map")} Google Maps</a>
-    ${aiReady()?(ui.nearBusy?`<button class="btn" id="nStop">Dừng</button>`:`<button class="btn" id="nAI">${ic("spark")} ${web?"AI tìm web":"Hỏi AI"}</button>`):`<button class="btn" data-goto="settings">${ic("spark")} Nhập API key</button>`}</div>
+    <div class="grid2"><a class="btn" id="sgMaps" target="_blank" rel="noopener" href="${esc(nearMapsUrl(sugMapsQuery()))}">${ic("map")} Quán gần (Maps)</a>
+    ${aiReady()?(ui.aiBusy?`<button class="btn" id="aiStop">Dừng</button>`:`<button class="btn mint" id="aiGo">${ic("spark")} AI gợi ý</button>`):`<button class="btn" data-goto="settings">${ic("spark")} Bật AI gợi ý</button>`}</div>
+    ${aiReady()?`<p class="hint" style="margin:0">${web?"AI xem lịch sử, sở thích, quán hay ăn và tìm quán quanh bạn trên web (~2–4k đ/lần).":"AI xem lịch sử, sở thích và quán hay ăn (~100–300đ/lần)."}</p>`:`<p class="hint" style="margin:0">Quán gần mở Google Maps, miễn phí. AI gợi ý cần API key trong Cài đặt.</p>`}
   </div>`;
-  if(ui.nearBusy)h+=`<div class="thinking"><i></i><i></i><i></i> ${web?"Đang tìm trên web, 20–60 giây…":"Đang nghĩ…"}</div>`;
-  if(ui.nearErr)h+=`<p class="err" style="margin-top:8px">${esc(ui.nearErr)}</p>`;
-  if(ui.nearRes){
-    h+=`<div class="sec"><h2>Quán gợi ý</h2><small>${ui.nearWeb?"từ web":"từ AI"}, nên xem bản đồ trước khi đi</small></div><div class="stack">`;
-    h+=ui.nearRes.length?ui.nearRes.map(p=>`<div class="pick"><div class="row between"><b>${esc(p.name)}</b><span class="badge ${p.confidence==="cao"?"b-ok":p.confidence==="thấp"?"b-warn":"b-soft"}">${esc(p.confidence||"?")}</span></div><p>${esc([p.dish,p.price,p.distance,p.address].filter(Boolean).join(" · "))}</p><div class="row"><a class="btn sm" target="_blank" rel="noopener" href="${esc(mapsUrl(p.name+" "+(p.address||cfg().area||"")))}">${ic("map")} Bản đồ</a>${/^https?:\/\//.test(p.url||"")?`<a class="btn sm" target="_blank" rel="noopener" href="${esc(p.url)}">Nguồn</a>`:""}<button class="btn sm" data-addplace="${esc(JSON.stringify({name:p.name,address:p.address||"",note:p.dish||""}))}">${ic("plus")} Lưu quán</button><button class="btn sm" data-newpoll="${esc(p.name)}">Bình chọn</button></div></div>`).join("")
-      :`<div class="empty"><b>Chưa tìm được quán chắc chắn</b>Thử nút Google Maps.</div>`;
+  if(ins.length)h+=`<div class="card small stack" style="gap:4px;margin-top:8px">${ins.map(t=>`<div>${esc(t)}</div>`).join("")}</div>`;
+  if(ui.aiBusy)h+=`<div class="thinking"><i></i><i></i><i></i> ${web?"Đang tìm quán, 20–60 giây…":"Đang nghĩ…"}</div>`;
+  if(ui.aiErr)h+=`<p class="err" style="margin-top:8px">${esc(ui.aiErr)}</p>`;
+  if(ui.aiRes){
+    h+=`<div class="sec"><h2>Gợi ý cho bạn</h2><small>${ui.aiRes.web?"có tìm trên web":"từ AI"}</small></div>${ui.aiRes.note?`<p class="small muted" style="margin:-4px 2px 8px">${esc(ui.aiRes.note)}</p>`:""}<div class="stack">`;
+    h+=(ui.aiRes.picks||[]).length?ui.aiRes.picks.map(p=>{const pl=p.placeId&&S.places.find(x=>x.id===p.placeId);const nm=pl?pl.name:p.name;
+      const badge=pl?`<span class="badge b-ok">Quán của tôi</span>`:p.confidence?`<span class="badge ${p.confidence==="cao"?"b-sky":p.confidence==="thấp"?"b-warn":"b-soft"}">${esc(p.confidence)}</span>`:`<span class="badge b-butter">Mới</span>`;
+      const map=pl?placeMaps(pl):mapsUrl(nm+" "+(p.address||cfg().area||""));
+      return `<div class="pick"><div class="row between"><b>${esc(nm)}</b>${badge}</div><p>${esc([p.dish,p.price,p.distance,p.why].filter(Boolean).join(" · "))}${p.address&&!pl?`<br>${esc(p.address)}`:""}</p>
+      <div class="row"><a class="btn sm" target="_blank" rel="noopener" href="${esc(map)}">${ic("map")} Bản đồ</a>${!pl&&/^https?:\/\//.test(p.url||"")?`<a class="btn sm" target="_blank" rel="noopener" href="${esc(p.url)}">Nguồn</a>`:""}${pl?"":`<button class="btn sm" data-addplace="${esc(JSON.stringify({name:nm,address:p.address||"",note:p.dish||""}))}">${ic("plus")} Lưu</button>`}<button class="btn sm" data-newpoll="${esc(nm)}" data-pid="${pl?pl.id:""}">Bình chọn</button><button class="btn sm mint" data-eatnow="${esc(nm)}">Chốt</button></div></div>`}).join("")
+      :`<div class="empty"><b>Chưa tìm được quán phù hợp</b>Thử bấm Quán gần (Maps).</div>`;
     h+=`</div>`;
   }
   return h;
 }
-function bindNear(m){
-  const d=$("#nDish",m),mp=$("#nMaps",m);
-  d.oninput=()=>{ui.dish=d.value;mp.href=nearMapsUrl(ui.dish);$$("[data-dish]",m).forEach(c=>c.setAttribute("aria-pressed",c.dataset.dish===ui.dish))};
-  $$("[data-dish]",m).forEach(c=>c.onclick=()=>{ui.dish=ui.dish===c.dataset.dish?"":c.dataset.dish;render()});
+function bindSuggest(m){
+  const t=$("#sgText",m),mp=$("#sgMaps",m);
+  t.oninput=()=>{ui.aiText=t.value;mp.href=nearMapsUrl(sugMapsQuery())};
+  t.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();t.blur();if(aiReady()&&!ui.aiBusy)askSuggest();else window.open(mp.href,"_blank")}};
+  $$("[data-mood]",m).forEach(b=>b.onclick=()=>{const x=b.dataset.mood;ui.aiMood=ui.aiMood.includes(x)?ui.aiMood.filter(y=>y!==x):[...ui.aiMood,x];b.setAttribute("aria-pressed",ui.aiMood.includes(x));mp.href=nearMapsUrl(sugMapsQuery())});
   const l=$("#nLoc",m);if(l)l.onclick=()=>{ui.pos=null;locate()};
-  const ai=$("#nAI",m);if(ai)ai.onclick=askNear;
-  const st=$("#nStop",m);if(st)st.onclick=()=>ui.nearCtl&&ui.nearCtl.abort();
+  const g=$("#aiGo",m);if(g)g.onclick=askSuggest;
+  const s=$("#aiStop",m);if(s)s.onclick=()=>ui.aiCtl&&ui.aiCtl.abort();
 }
-async function askNear(){
+function groupContext(){
+  const le=lastEaten();const d=new Date();
+  return {thoi_gian:WDL[d.getDay()]+" "+dLabel(todayISO())+" "+pad(d.getHours())+":"+pad(d.getMinutes()),khu_vuc:cfg().area||"chưa nhập",so_thich:(S.priv.likes||[]).map(t=>TAGS[t]),khong_an_duoc:S.priv.dislikes||"",
+    quan_hay_an:places().map(p=>({id:p.id,ten:p.name,loai:(p.tags||[]).map(t=>TAGS[t]),gia:PRICE[p.price]||"",an_lan_cuoi:agoTxt(daysAgo(placeLast(p,le))),ghi_chu:p.note||""})).slice(0,80),
+    bua_gan_day:billsSorted().slice(0,10).map(b=>({ngay:dLong(b.date),quan:b.placeName||b.title,moi_suat:Math.round(b.total/((b.shares||[]).length||1))}))};
+}
+async function askSuggest(){
   if(!aiReady())return;
-  const where=ui.pos?`tọa độ ${ui.pos.lat}, ${ui.pos.lng}${cfg().area?" (gần "+cfg().area+")":""}`:cfg().area;
-  if(!where){ui.nearErr="Bật định vị hoặc nhập khu vực trong Cài đặt trước.";render();return}
-  const web=aiCfg().web;ui.nearBusy=true;ui.nearErr="";ui.nearRes=null;ui.nearWeb=web;ui.nearCtl=new AbortController();render();
-  const want=ui.dish.trim()||"món ngon, giá văn phòng";
-  const fmtJ=`[{"name":"Tên quán","address":"Số nhà, phố, quận","dish":"Món nên gọi","price":"40-60k","distance":"khoảng 500m","confidence":"cao"${web?',"url":"link nguồn"':""}}]`;
-  const prompt=web
-    ?`Người dùng đang ở ${where}, Việt Nam, muốn ăn trưa: ${want}.
-Tìm trên web (Google Maps, Foody, ShopeeFood, review) các quán đang mở trong bán kính khoảng 1,5 km. Chọn tối đa 6 quán đáng tin.
-Cuối cùng chỉ trả lời một JSON array: ${fmtJ}
-confidence: "cao" nếu nhiều nguồn khớp và còn mở, "trung bình" nếu một nguồn, "thấp" nếu không rõ.`
-    :`Người dùng đang ở ${where}, Việt Nam, muốn ăn trưa: ${want}.
-Liệt kê tối đa 6 quán bạn biết có thật trong bán kính khoảng 1,5 km. Không bịa: không chắc thì confidence "thấp"; không biết thì trả mảng rỗng.
-Chỉ trả lời một JSON array: ${fmtJ}`;
-  try{const r=await aiJSON(prompt,{signal:ui.nearCtl.signal,web,maxTokens:web?3000:1200});if(!Array.isArray(r))throw{code:"invalid_json"};ui.nearRes=r.filter(x=>x&&x.name).slice(0,8)}
-  catch(e){ui.nearErr=aiErrText(e)}
-  ui.nearBusy=false;render();
+  const web=aiCfg().web;
+  const where=ui.pos?`tọa độ ${ui.pos.lat}, ${ui.pos.lng}${cfg().area?" (gần "+cfg().area+")":""}`:(cfg().area||"chưa rõ");
+  ui.aiBusy=true;ui.aiErr="";ui.aiRes=null;ui.aiCtl=new AbortController();render();
+  const want=[...ui.aiMood,ui.aiText.trim()].filter(Boolean).join("; ")||"không có yêu cầu đặc biệt";
+  const prompt=`Bạn giúp chọn chỗ ăn trưa hôm nay ở Việt Nam.
+Dữ liệu (JSON):
+${JSON.stringify({...groupContext(),vi_tri:where})}
+
+Mong muốn: ${want}
+${web?"Hãy dùng tìm kiếm web (Google Maps, Foody, ShopeeFood, bài review) để tìm quán đang mở trong bán kính khoảng 1,5 km quanh vị trí, khớp mong muốn.\n":""}
+Gợi ý 5 lựa chọn. Quy tắc:
+- 1-2 lựa chọn là quán trong "quan_hay_an" phù hợp mong muốn (ghi đúng "id" vào placeId); tránh quán vừa ăn 1-3 ngày. Nếu không có quán nào phù hợp thì bỏ qua.
+- Còn lại là quán khác quanh vị trí${web?" tìm được trên web":" mà bạn khá chắc có thật; không chắc thì confidence \"thấp\""}; placeId null; không bịa địa chỉ.
+- Ưu tiên loại món trong "so_thich"; tuyệt đối tránh món có thứ trong "khong_an_duoc"; nếu ăn lặp một loại món thì đổi loại khác.
+- "why" tiếng Việt, dưới 15 từ. confidence là "cao", "trung bình" hoặc "thấp".
+Cuối cùng chỉ trả lời một JSON object:
+{"note":"một câu ngắn","picks":[{"placeId":null,"name":"Tên quán","address":"Số nhà, phố, quận","dish":"Món nên gọi","price":"40-60k","distance":"khoảng 500m","confidence":"cao","why":"Lý do"${web?',"url":"link nguồn"':""}}]}`;
+  try{const r=await aiJSON(prompt,{signal:ui.aiCtl.signal,web,maxTokens:web?3000:1200});if(!r||!Array.isArray(r.picks))throw{code:"invalid_json"};
+    r.picks=r.picks.filter(p=>p&&(p.name||p.placeId)).slice(0,6).map(p=>({...p,placeId:S.places.some(x=>x.id===p.placeId)?p.placeId:null,name:String(p.name||"")}));r.web=web;ui.aiRes=r}
+  catch(e){ui.aiErr=aiErrText(e)}
+  ui.aiBusy=false;render();
 }
 
 /* --- AI transport: each person's own Anthropic key, only on this device --- */
@@ -830,14 +802,28 @@ function aiErrText(e){
   return ({no_key:"Chưa có API key, nhập trong Cài đặt.",bad_key:"API key không đúng. Kiểm tra trong Cài đặt.",no_credit:"Tài khoản API hết tiền, nạp thêm ở console.anthropic.com.",rate_limited:"Hỏi nhiều quá, đợi một phút.",overloaded:"Claude đang quá tải, thử lại sau.",invalid_json:"AI trả lời sai định dạng, thử lại.",network:"Không gọi được API, kiểm tra mạng.",cancelled:""})[c]??("Lỗi khi gọi Claude"+(e&&e.message?": "+e.message:"."));
 }
 
-/* --- polls (shared by link) --- */
-const myPolls=()=>recall("tn2.polls",[]);
-function rememberPoll(p){const l=myPolls().filter(x=>x.id!==p.id);l.unshift({id:p.id,title:p.title,date:p.date});store("tn2.polls",l.slice(0,12))}
+/* --- polls (shared by link); my list syncs across devices in profiles/{me}/private/polls --- */
+const myPolls=()=>(S.pollIdx||[]).slice().sort((a,b)=>(b.at||"").localeCompare(a.at||""));
+const savePollIdx=()=>W(setDoc(D("profiles",myPid(),"private","polls"),{list:S.pollIdx}));
+function rememberPoll(id,p){
+  if(!p||S.mode!=="db")return;
+  const old=S.pollIdx.find(x=>x.id===id);
+  const e={id,title:p.title||"Bình chọn",date:p.date||todayISO(),status:p.status||"open",winner:p.winner!=null&&p.options&&p.options[p.winner]?p.options[p.winner].name:null,closesAt:p.closesAt||"",owner:p.ownerPid===myPid(),at:(old&&old.at)||p.createdAt||new Date().toISOString()};
+  if(old&&JSON.stringify(old)===JSON.stringify(e))return;
+  S.pollIdx=[e,...S.pollIdx.filter(x=>x.id!==id)].slice(0,30);savePollIdx();
+}
+function forgetPoll(id){S.pollIdx=S.pollIdx.filter(x=>x.id!==id);savePollIdx();render()}
+function migrateLocalPolls(){
+  const old=recall("tn2.polls",[]);if(!old.length)return;store("tn2.polls",undefined);
+  let changed=false;old.forEach(p=>{if(p&&p.id&&!S.pollIdx.some(x=>x.id===p.id)){S.pollIdx.push({id:p.id,title:p.title||"Bình chọn",date:p.date||todayISO(),status:"open",winner:null,closesAt:"",owner:false,at:(p.date||"")+"T00:00:00.000Z"});changed=true}});
+  if(changed)savePollIdx();
+}
 function eatVote(){
   const l=myPolls();
   return `<button class="btn mint block" data-newpoll="">${ic("plus")} Tạo bình chọn mới</button>
-    ${l.length?`<div class="sec"><h2>Gần đây</h2></div><div class="card" style="padding-block:0"><div class="list">${l.map(p=>`<button class="li" data-poll="${esc(p.id)}"><span class="mid"><b>${esc(p.title)}</b><small>${esc(dLong(p.date))}</small></span><span class="chev">${ic("right")}</span></button>`).join("")}</div></div>`
-    :`<div class="empty"><b>Chưa có bình chọn</b>Tạo bình chọn rồi gửi link cho mọi người vote.</div>`}`;
+    ${l.length?`<div class="sec"><h2>Bình chọn của tôi</h2><small>${l.length}</small></div><div class="card" style="padding-block:0"><div class="list">${l.map(p=>{const open=p.status==="open";
+      return `<button class="li" data-poll="${esc(p.id)}"><span class="mid"><b>${esc(p.title)}</b><small>${esc(dLong(p.date))}${open&&p.closesAt?" · chốt "+esc(p.closesAt):""}${!open&&p.winner?" · "+esc(p.winner):""}</small></span><span class="end"><span class="badge ${open?"b-sky":"b-ok"}">${open?"Đang mở":"Đã chốt"}</span></span></button>`}).join("")}</div></div>`
+    :`<div class="empty"><b>Chưa có bình chọn</b>Tạo bình chọn rồi gửi link cho mọi người vote. Bình chọn bạn tạo hoặc được mời sẽ nằm ở đây.</div>`}`;
 }
 function bindVote(m){$$("[data-poll]",m).forEach(b=>b.onclick=()=>openPoll(b.dataset.poll))}
 function openPollEditor(preset=[]){
@@ -846,43 +832,46 @@ function openPollEditor(preset=[]){
     <input class="inp" id="poTitle" value="Trưa nay ăn gì? ${dLabel(todayISO())}" maxlength="60" aria-label="Tiêu đề">
     <div><span class="lbl">Lựa chọn</span><div class="chips" id="poSel"></div></div>
     ${places().length?`<div><span class="lbl">Thêm từ quán của tôi</span><div class="chips" id="poPlaces"></div></div>`:""}
-    <div class="keyrow"><input class="inp" id="poCustom" placeholder="Thêm lựa chọn khác" maxlength="50"><button class="btn" id="poAdd">Thêm</button></div>
+    <div class="keyrow"><input class="inp" id="poCustom" placeholder="Thêm lựa chọn khác" maxlength="50" enterkeyhint="enter" autocomplete="off"><button class="btn" id="poAdd" data-kf>Thêm</button></div>
     <div class="row"><label class="lbl" for="poClose" style="margin:0">Chốt lúc</label><input class="inp" type="time" id="poClose" value="11:30" style="width:auto"></div>
-    <button class="btn mint block" id="poGo">Tạo và gửi link</button></div>`);
+    <button class="btn mint block" id="poGo">Tạo và gửi link</button></div>`,null,()=>render());
   const draw=()=>{
     $("#poSel",el).innerHTML=draft.length?draft.map((o,i)=>`<button class="chip" aria-pressed="true" data-rm="${i}">${esc(o.name)} ✕</button>`).join(""):`<span class="small muted">Chọn ít nhất 2</span>`;
-    const pp=$("#poPlaces",el);if(pp)pp.innerHTML=places().filter(p=>!draft.some(d=>d.placeId===p.id||d.name===p.name)).map(p=>`<button class="chip" data-pl="${p.id}">${esc(p.name)}</button>`).join("");
+    const pp=$("#poPlaces",el);if(pp)pp.innerHTML=places().filter(p=>!draft.some(d=>d.placeId===p.id||d.name===p.name)).map(p=>`<button class="chip" data-pl="${p.id}">${esc(p.name)}</button>`).join("")||`<span class="small muted">Đã thêm hết</span>`;
     $$("[data-rm]",el).forEach(b=>b.onclick=()=>{draft.splice(+b.dataset.rm,1);draw()});
     $$("[data-pl]",el).forEach(b=>b.onclick=()=>{const p=S.places.find(x=>x.id===b.dataset.pl);if(draft.length<8)draft.push({name:p.name,placeId:p.id});draw()});
     $("#poGo",el).disabled=draft.length<2;
   };
-  const add=()=>{const i=$("#poCustom",el);const v=i.value.trim();if(v&&draft.length<8&&!draft.some(d=>d.name===v)){draft.push({name:v,placeId:null});i.value="";draw()}};
-  $("#poAdd",el).onclick=add;$("#poCustom",el).onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();add()}};
-  $("#poGo",el).onclick=async()=>{const id=newCode(20);const p={title:$("#poTitle",el).value.trim()||"Trưa nay ăn gì?",date:todayISO(),options:draft.map(o=>({name:o.name,placeId:o.placeId||null})),status:"open",winner:null,closesAt:$("#poClose",el).value,ownerPid:myPid(),createdAt:new Date().toISOString()};
-    W(setDoc(D("polls",id),p));rememberPoll({id,...p});openPoll(id,true)};
+  const inp=$("#poCustom",el);
+  const add=()=>{const v=inp.value.trim();if(v&&draft.length<8&&!draft.some(d=>norm(d.name)===norm(v))){draft.push({name:v,placeId:null});draw()}inp.value="";inp.focus()};
+  $("#poAdd",el).onclick=add;inp.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();add()}};
+  $("#poGo",el).onclick=()=>{const v=inp.value.trim();if(v&&draft.length<8&&!draft.some(d=>norm(d.name)===norm(v)))draft.push({name:v,placeId:null});if(draft.length<2)return;
+    const id=newCode(20);const p={title:$("#poTitle",el).value.trim()||"Trưa nay ăn gì?",date:todayISO(),options:draft.map(o=>({name:o.name,placeId:o.placeId||null})),status:"open",winner:null,closesAt:$("#poClose",el).value,ownerPid:myPid(),createdAt:new Date().toISOString()};
+    W(setDoc(D("polls",id),p));rememberPoll(id,p);ui.tab="eat";ui.eatView="vote";openPoll(id,true)};
   draw();
 }
 function openPoll(id,justCreated){
-  let poll=null,votes=[];const unsubs=[];
-  const el=openSheet("Bình chọn",`<div class="thinking"><i></i><i></i><i></i> Đang tải…</div>`,null,()=>unsubs.forEach(u=>u()));
+  let poll=null,votes=[],loaded=false;const unsubs=[];
+  const el=openSheet("Bình chọn",`<div class="thinking"><i></i><i></i><i></i> Đang tải…</div>`,null,()=>{unsubs.forEach(u=>u());render()});
   const link=shareBase()+"#v="+id;
   const draw=()=>{
-    if(!poll){el.innerHTML=`<div class="empty"><b>Không tìm thấy bình chọn</b>Có thể đã bị xóa.</div>`;return}
-    rememberPoll({id,...poll});
+    if(!poll){if(!loaded)return;el.innerHTML=`<div class="empty"><b>Không tìm thấy bình chọn</b>Có thể đã bị xóa.</div>`;if(S.pollIdx.some(x=>x.id===id))forgetPoll(id);return}
+    rememberPoll(id,poll);
     const mine=votes.find(v=>v.id===myPid());const total=votes.length;const open=poll.status==="open";const owner=poll.ownerPid===myPid();
-    el.innerHTML=`<div class="stack"><div><b style="font-family:var(--f-head);font-size:1.05rem">${esc(poll.title)}</b><div class="small muted">${open?`Chốt lúc ${esc(poll.closesAt||"--")}`:"Đã chốt"} · ${total} phiếu</div></div>
+    el.innerHTML=`<div class="stack"><div><b style="font-family:var(--f-head);font-size:1.05rem">${esc(poll.title)}</b><div class="small muted">${open?`Chốt lúc ${esc(poll.closesAt||"--")}`:"Đã chốt"} · ${total} phiếu${open?" · bấm để chọn":""}</div></div>
       <div>${poll.options.map((o,i)=>{const vs=votes.filter(v=>v.pick===i);const pct=total?Math.round(vs.length/total*100):0;
         return `<button class="opt ${poll.winner===i?"win":""}" data-pick="${i}" aria-pressed="${mine?mine.pick===i:false}" ${open?"":"disabled"}><span class="bar" style="width:${pct}%"></span><span class="mid">${esc(o.name)}</span><span class="small muted">${esc(vs.map(v=>v.id===myPid()?"Tôi":v.name).slice(0,3).join(", "))}${vs.length>3?"…":""}</span><b class="num">${vs.length}</b></button>`}).join("")}</div>
       <div class="grid2"><button class="btn" id="pvShare">${ic("send")} Gửi link</button>${owner&&open?`<button class="btn mint" id="pvFinish" ${total?"":"disabled"}>${ic("check")} Chốt</button>`:poll.winner!=null?`<button class="btn mint" id="pvBill">Tạo bill</button>`:"<span></span>"}</div>
-      ${owner?`<button class="btn danger sm" id="pvDel" style="align-self:center">${ui.confirm==="pv"?"Bấm lần nữa để xóa":"Xóa bình chọn"}</button>`:""}</div>`;
+      ${owner?`<button class="btn danger sm" id="pvDel" style="align-self:center">${ui.confirm==="pv"?"Bấm lần nữa để xóa":"Xóa bình chọn"}</button>`:`<button class="btn ghost sm" id="pvForget" style="align-self:center">Bỏ khỏi danh sách của tôi</button>`}</div>`;
     $$("[data-pick]",el).forEach(b=>b.onclick=()=>W(setDoc(D("polls",id,"votes",myPid()),{pick:+b.dataset.pick,name:myName(),pid:myPid(),at:new Date().toISOString()})));
     $("#pvShare",el).onclick=()=>shareOrCopy({title:poll.title,text:`${poll.title} Vote ở đây:`,url:link},"Đã chép link bình chọn");
     const f=$("#pvFinish",el);if(f)f.onclick=()=>{const c=poll.options.map((_,i)=>votes.filter(v=>v.pick===i).length);const mx=Math.max(...c);const ties=c.map((x,i)=>x===mx?i:-1).filter(i=>i>=0);const w=ties[Math.floor(Math.random()*ties.length)];
       W(updateDoc(D("polls",id),{status:"closed",winner:w}));toast(ties.length>1?"Hòa phiếu, bốc thăm: "+poll.options[w].name:"Chốt: "+poll.options[w].name)};
     const bb=$("#pvBill",el);if(bb)bb.onclick=()=>{const w=poll.options[poll.winner];const ppl=votes.filter(v=>v.pid&&v.pid!==myPid()).map(v=>({key:"p_"+v.pid,name:v.name,pid:v.pid,cid:(contactByPid(v.pid)||{}).id||null}));openBillEditor(null,{placeName:w.name,people:ppl})};
-    const dl=$("#pvDel",el);if(dl)dl.onclick=()=>{if(ui.confirm!=="pv"){ui.confirm="pv";draw();return}ui.confirm=null;W(deleteDoc(D("polls",id)));store("tn2.polls",myPolls().filter(x=>x.id!==id));closeSheet();render()};
+    const dl=$("#pvDel",el);if(dl)dl.onclick=()=>{if(ui.confirm!=="pv"){ui.confirm="pv";draw();return}ui.confirm=null;W(deleteDoc(D("polls",id)));forgetPoll(id);closeSheet();toast("Đã xóa bình chọn")};
+    const fg=$("#pvForget",el);if(fg)fg.onclick=()=>{forgetPoll(id);closeSheet()};
   };
-  unsubs.push(onSnapshot(D("polls",id),s=>{poll=s.exists()?s.data():null;draw()},()=>{poll=null;draw()}));
+  unsubs.push(onSnapshot(D("polls",id),s=>{loaded=true;poll=s.exists()?s.data():null;draw()},()=>{loaded=true;poll=null;draw()}));
   unsubs.push(onSnapshot(C("polls",id,"votes"),s=>{votes=s.docs.map(x=>({id:x.id,...x.data()}));draw()},()=>{}));
   if(justCreated)setTimeout(()=>toast("Đã tạo. Bấm Gửi link để gửi vào nhóm Zalo."),300);
 }
@@ -989,7 +978,7 @@ function openBillEditor(id,preset={}){
       <input class="inp" type="date" id="edDate" value="${ed.date}" max="${todayISO()}" aria-label="Ngày">
       <select class="inp" id="edPlat" aria-label="Đặt ở đâu">${Object.entries(PLAT).map(([k,v])=>`<option value="${k}" ${ed.platform===k?"selected":""}>${v}</option>`).join("")}</select></div>
     <div><span class="lbl">Ai ăn</span>${cand.size>12?`<input class="inp" id="edQ" placeholder="Tìm trong danh bạ" style="margin-bottom:6px">`:""}<div class="chips" id="edPeople"></div>
-      <div class="keyrow" style="margin-top:6px"><input class="inp" id="edNew" placeholder="Người mới (lưu vào danh bạ)" maxlength="40"><button class="btn" id="edNewBtn">Thêm</button></div></div>
+      <div class="keyrow" style="margin-top:6px"><input class="inp" id="edNew" placeholder="Người mới (lưu vào danh bạ)" maxlength="40"><button class="btn" id="edNewBtn" data-kf>Thêm</button></div></div>
     <div><span class="lbl">Ai trả tiền</span><div class="chips" id="edPayer"></div></div>
     <input type="file" accept="image/*" id="edScanFile" hidden>
     <div><span class="lbl">Chia thế nào?</span><div class="seg" id="edMode"><button data-v="equal">Chia đều</button><button data-v="lines">Gán món</button><button data-v="items">Theo người</button><button data-v="custom">Tự nhập</button></div></div>
@@ -1012,7 +1001,7 @@ function openBillEditor(id,preset={}){
     $$("#edMode button",el).forEach(x=>x.setAttribute("aria-pressed",x.dataset.v===ed.mode));
     $("#edRoundRow",el).hidden=ed.mode==="custom";
     const Pn=$("#edPanel",el);
-    const num=(id,val,ph,lbl)=>`<input class="inp num" id="${id}" inputmode="numeric" pattern="[0-9]*" value="${esc(val)}" placeholder="${ph}" aria-label="${lbl}" autocomplete="off">`;
+    const num=(id,val,ph,lbl)=>`<input class="inp num" id="${id}" inputmode="numeric" pattern="[0-9]*" data-money value="${esc(val)}" placeholder="${ph}" aria-label="${lbl}" autocomplete="off">`;
     const feesHTML=`<div class="fees">${num("edShip",ed.ship,"Phí giao","Phí giao")}${num("edSvc",ed.svc,"Phí khác","Phí khác")}${num("edDisc",ed.disc,"Giảm giá","Giảm giá")}</div>`;
     const bindFees=()=>[["#edShip","ship"],["#edSvc","svc"],["#edDisc","disc"]].forEach(([s,k])=>{const i=$(s,Pn);if(i)i.oninput=()=>{ed[k]=i.value;drawPrev()}});
     const scanHTML=`<div class="row between"><button class="btn sm" id="edScanBtn">${ic("camera")} Quét ảnh bill</button>${aiReady()?`<label class="switch small muted" style="gap:6px">Đọc bằng AI<input type="checkbox" id="edAIScan" ${prefs().aiScan?"checked":""}></label>`:""}</div><div id="edScan">${ed.scanMsg||""}</div>`;
@@ -1021,7 +1010,7 @@ function openBillEditor(id,preset={}){
       const assign=ed.mode==="lines";
       const short=k=>{const n=nm(k);return n==="Tôi"?n:n.split(/\s+/).slice(-1)[0]};
       Pn.innerHTML=`<div class="stack" style="gap:6px">${scanHTML}
-        ${ed.lines.map((l,i)=>`<div class="ln"><div class="ln-top"><input class="inp" data-lnn="${i}" value="${esc(l.name)}" placeholder="Tên món" aria-label="Tên món"><input class="inp num" data-lnp="${i}" inputmode="numeric" pattern="[0-9]*" value="${esc(l.price)}" placeholder="Giá" aria-label="Giá"><button class="x" data-lnd="${i}" aria-label="Xóa món">✕</button></div>
+        ${ed.lines.map((l,i)=>`<div class="ln"><div class="ln-top"><input class="inp" data-lnn="${i}" value="${esc(l.name)}" placeholder="Tên món" aria-label="Tên món"><input class="inp num" data-lnp="${i}" inputmode="numeric" pattern="[0-9]*" data-money value="${esc(l.price)}" placeholder="Giá" aria-label="Giá"><button class="x" data-lnd="${i}" aria-label="Xóa món">✕</button></div>
           ${!assign&&l.qty>1?`<div class="small muted" style="padding:0 4px">Số lượng ${l.qty}</div>`:""}
           ${assign?`<div class="chips">${ed.sel.map(k=>`<button class="chip mini" data-ln="${i}" data-k="${esc(k)}" aria-pressed="${l.who.includes(k)}">${esc(short(k))}</button>`).join("")}${l.who.filter(k=>ed.sel.includes(k)).length>1?`<span class="small muted">chia ${l.who.filter(k=>ed.sel.includes(k)).length}</span>`:""}</div>`:""}</div>`).join("")}
         <button class="btn sm" id="lnAdd" style="align-self:flex-start">${ic("plus")} Thêm món</button>
@@ -1036,7 +1025,7 @@ function openBillEditor(id,preset={}){
       const t=$("#edTotal",Pn);if(t)t.oninput=()=>{ed.total=t.value;ed.totalTouched=true;drawPrev()};
       bindFees();drawPrev();return;
     }
-    Pn.innerHTML=ed.sel.map(k=>`<div class="peritem"><span class="who">${avatar(nm(k))}<span>${esc(nm(k))}</span></span><input class="inp num" data-it="${esc(k)}" inputmode="numeric" pattern="[0-9]*" placeholder="0" value="${esc(ed.items[k]||"")}" autocomplete="off" aria-label="Tiền của ${esc(nm(k))}"><span class="val num" data-iv="${esc(k)}"></span></div>`).join("")+
+    Pn.innerHTML=ed.sel.map(k=>`<div class="peritem"><span class="who">${avatar(nm(k))}<span>${esc(nm(k))}</span></span><input class="inp num" data-it="${esc(k)}" inputmode="numeric" pattern="[0-9]*" data-money placeholder="0" value="${esc(ed.items[k]||"")}" autocomplete="off" aria-label="Tiền của ${esc(nm(k))}"><span class="val num" data-iv="${esc(k)}"></span></div>`).join("")+
       (ed.mode==="items"?`${feesHTML}<p class="hint">Gõ 45 = 45.000đ. Phí và giảm giá chia theo tỷ lệ tiền của từng người.</p>`:`<p class="hint">Gõ 45 = 45.000đ. Mỗi người trả đúng số đã nhập.</p>`);
     $$("[data-it]",Pn).forEach(i=>i.oninput=()=>{ed.items[i.dataset.it]=i.value;drawPrev()});
     bindFees();drawPrev();
@@ -1054,11 +1043,11 @@ function openBillEditor(id,preset={}){
   $$("#edMode button",el).forEach(x=>x.onclick=()=>{ed.mode=x.dataset.v;if(ed.mode==="lines")explode();if(ed.mode==="equal")syncTotal();if(ed.mode==="items"||ed.mode==="custom")ed.scanMsg="";drawPanel()});
   $("#edRound",el).onchange=e=>{ed.round=e.target.checked;drawPrev()};
   const fq=$("#edQ",el);if(fq)fq.oninput=()=>{q=fq.value;drawPeople()};
-  const addNew=()=>{const i=$("#edNew",el);const n=i.value.trim();if(!n)return;
+  const addNew=()=>{const i=$("#edNew",el);const n=i.value.trim();if(!n){i.focus();return}
     const ex=contacts().find(c=>norm(c.name)===norm(n));
     let o;if(ex)o=ex.pid?{key:"p_"+ex.pid,name:ex.name,pid:ex.pid,cid:ex.id,phone:ex.phone||null}:{key:"c_"+ex.id,name:ex.name,pid:null,cid:ex.id,phone:ex.phone||null};
     else{const cid=rid();saveContact(cid,{name:n,phone:"",bank:null,pid:null,hidden:false,createdAt:new Date().toISOString()});o={key:"c_"+cid,name:n,pid:null,cid,phone:null}}
-    if(!cand.has(o.key))cand.set(o.key,o);if(!ed.sel.includes(o.key))ed.sel.push(o.key);i.value="";drawPeople();drawPanel()};
+    if(!cand.has(o.key))cand.set(o.key,o);if(!ed.sel.includes(o.key))ed.sel.push(o.key);i.value="";drawPeople();drawPanel();i.focus()};
   $("#edNewBtn",el).onclick=addNew;$("#edNew",el).onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();addNew()}};
   $("#edSave",el).onclick=async()=>{
     const er=$("#edErr",el);const show=t=>{er.textContent=t;er.hidden=false};
@@ -1672,8 +1661,8 @@ function openGuide(){
     `<div class="mflow two"><div class="mscr"><div class="mcap">Người nợ</div><div class="mqr">${ic("qr")}</div><div class="mline">${mb("QR trả")}${hl("Tôi đã chuyển")}</div></div><div class="mscr"><div class="mcap">Người trả</div>${row(av("Hà")+" Hà","<span class='mbadge sky'>Báo đã chuyển</span>")}<div class="mline">${hl(ic("check")+" Đã nhận")}</div></div></div>`],
    ["Công nợ","Gom theo người, hai chiều. Ai quá hạn có nhãn Cần nhắc: gửi một QR gộp mọi bữa.",
     `<div class="mscr"><div class="msum"><span class="in">Nợ tôi<br><b>200.000đ</b></span><span class="out">Tôi nợ<br><b>0đ</b></span></div>${row(av("Minh")+" Minh · 3 bữa","<b class='pos'>150.000đ</b>")}<div class="mline"><span class="mbadge warn">Cần nhắc</span>${hl(ic("send")+" Nhắc kèm QR")}${mb("Đã nhận đủ","mint")}</div></div>`],
-   ["Trưa nay ăn gì","Quay số, hỏi AI, tìm quán gần vị trí, hoặc gửi link bình chọn rồi Chốt và Tạo bill.",
-    `<div class="mscr"><div class="mseg"><span class="on">Quay số</span><span>Gợi ý</span><span>Gần đây</span><span>Bình chọn</span></div><div class="mreel">Bún chả Hàng Quạt</div><div class="mspin hl">Quay</div></div>`],
+   ["Trưa nay ăn gì","Quay số; Gợi ý để mở quán gần trên Google Maps (miễn phí) hoặc nhờ AI chọn; Bình chọn để gửi link cho mọi người vote rồi Chốt và Tạo bill. Bình chọn được lưu lại để mở lại sau.",
+    `<div class="mscr"><div class="mseg"><span class="on">Quay số</span><span>Gợi ý</span><span>Bình chọn</span></div><div class="mreel">Bún chả Hàng Quạt</div><div class="mspin hl">Quay</div></div>`],
    ["AI và chi phí","Dán API key Claude của bạn trong Cài đặt. Key chỉ ở trên máy này, tiền tính vào tài khoản của bạn.",
     `<div class="mscr"><div class="mcap">Cài đặt → API key Claude</div><div class="minp">sk-ant-••••••••</div><div class="mline"><span class="mbadge">Gợi ý ~100–300đ</span><span class="mbadge">Tìm web ~2–4k</span></div></div>`],
    ["Cài lên màn hình chính","Safari → Chia sẻ → Thêm vào MH chính. Lần đầu mở từ icon, dán mã khôi phục lấy trong Cài đặt.",
@@ -1697,6 +1686,13 @@ function handleHash(){
 }
 window.addEventListener("hashchange",()=>{if(S.mode==="db"&&location.hash){pendingHash=location.hash;handleHash()}});
 
+/* money inputs: thousand separators while typing (45000 -> 45.000), caret kept in place */
+document.addEventListener("input",e=>{const i=e.target;if(!i||!i.matches||!i.matches("input[data-money]"))return;const v=i.value;if(!/^[\d.\s]*$/.test(v))return;
+  const pos=i.selectionStart==null?v.length:i.selectionStart;const before=v.slice(0,pos).replace(/\D/g,"").length;
+  const dg=v.replace(/\D/g,"").replace(/^0+(?=\d)/,"").slice(0,12);const f=dg?Number(dg).toLocaleString("vi-VN"):"";if(f===v)return;
+  i.value=f;let n=0,p=0;while(p<f.length&&n<before){if(/\d/.test(f[p]))n++;p++}try{i.setSelectionRange(p,p)}catch(err){}},true);
+/* buttons marked data-kf keep the keyboard open (no blur of the focused input) */
+["mousedown","pointerdown"].forEach(t=>document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest("[data-kf]")&&document.activeElement&&document.activeElement.matches("input,textarea"))e.preventDefault()},true));
 /* no pinch / double-tap zoom (iOS Safari ignores user-scalable) */
 ["gesturestart","gesturechange","gestureend"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
 document.addEventListener("touchmove",e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
