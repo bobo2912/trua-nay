@@ -224,12 +224,16 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 
 /* sheet & toast */
 .scrim{position:fixed;inset:0;background:rgba(30,28,40,.38);z-index:40;display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--bg);width:100%;max-width:560px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:0 14px calc(18px + env(safe-area-inset-bottom,0px));animation:up .2s ease-out}
+.sheet{background:var(--bg);width:100%;max-width:560px;max-height:90%;display:flex;flex-direction:column;overflow:hidden;border-radius:18px 18px 0 0;animation:up .2s ease-out}
+.sheet-b{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:0 14px calc(18px + env(safe-area-inset-bottom,0px))}
+.sheet.has-foot .sheet-b{padding-bottom:14px}
+.sheet-f{flex:none;background:var(--bg);border-top:1px solid var(--line);box-shadow:0 -6px 14px -10px rgba(47,44,59,.25);padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px))}
+.sheet-f:empty{display:none}
 @keyframes up{from{transform:translateY(24px);opacity:.5}to{transform:none;opacity:1}}
-.sheet-h{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0 10px;z-index:2}
+.sheet-h{flex:none;background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px 10px}
 .sheet-h h3{font-size:1.05rem;font-weight:900}
 .x{border:0;background:var(--surface-2);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--muted)}
-.sheet-foot{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));z-index:3;display:flex;flex-direction:column;gap:6px;background:var(--bg);margin:12px -14px calc(-18px - env(safe-area-inset-bottom,0px));padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);box-shadow:0 -6px 14px -10px rgba(47,44,59,.25)}
+.sheet-foot{display:flex;flex-direction:column;gap:6px}
 .qrimg{-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto;width:100%;max-width:300px;display:block;margin:0 auto;border-radius:12px}
 .toast{position:fixed;left:50%;bottom:calc(66px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.84rem;line-height:1.4;z-index:60;display:flex;gap:12px;align-items:center;justify-content:space-between;width:calc(100% - 28px);max-width:512px;box-shadow:var(--shadow)}
 .toast span{flex:1;min-width:0}
@@ -315,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.8.2", BUILD="07/10/2026";
+const VERSION="2.8.3", BUILD="07/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -395,6 +399,7 @@ function money(expr){
 function hue(s){let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))%360;return h}
 function avatar(name,cls=""){const n=String(name||"?").trim()||"?";const parts=n.split(/\s+/);const ini=(parts.length>1?parts[0][0]+parts[parts.length-1][0]:n.slice(0,2)).toUpperCase();const h=hue(n);return `<span class="av ${cls}" style="background:hsl(${h} 60% 88%);color:hsl(${h} 35% 30%)" aria-hidden="true">${esc(ini)}</span>`}
 const mapsUrl=q=>"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
+const settled=s=>!!(s&&(s.paid||s.sentAt));
 const store=(k,v)=>{try{v===undefined?localStorage.removeItem(k):localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const recall=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
 
@@ -456,10 +461,14 @@ let sheetRefresh=null,sheetClose=null;
 function openSheet(title,html,refresh,onClose){
   if(sheetClose){const f=sheetClose;sheetClose=null;f()}
   const root=$("#sheetRoot");
-  root.innerHTML=`<div class="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><h3>${esc(title)}</h3><button class="x" aria-label="Đóng">✕</button></div><div class="sheet-b">${html}</div></div></div>`;
+  root.innerHTML=`<div class="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><h3>${esc(title)}</h3><button class="x" aria-label="Đóng">✕</button></div><div class="sheet-b">${html}</div><div class="sheet-f"></div></div></div>`;
   const sc=root.firstChild;sc.onclick=e=>{if(e.target===sc)closeSheet()};$(".x",root).onclick=closeSheet;
   sheetRefresh=refresh||null;sheetClose=onClose||null;document.body.style.overflow="hidden";document.body.classList.add("sheet-open");
-  return $(".sheet-b",root);
+  // the action bar (.sheet-foot) lives outside the scroll area so it never moves, even with iOS bounce
+  const body=$(".sheet-b",root),foot=$(".sheet-f",root),sheet=$(".sheet",root);
+  const lift=()=>{const f=body.querySelector(".sheet-foot");if(f){foot.replaceChildren(f);sheet.classList.add("has-foot")}else if(!body.isConnected)return};
+  new MutationObserver(()=>queueMicrotask(lift)).observe(body,{childList:true,subtree:true});queueMicrotask(lift);
+  return body;
 }
 function closeSheet(){$("#sheetRoot").innerHTML="";document.body.classList.remove("sheet-open");sheetRefresh=null;if(sheetClose){const f=sheetClose;sheetClose=null;f()}document.body.style.overflow=""}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$("#sheetRoot").firstChild)closeSheet()});
@@ -884,14 +893,14 @@ function openPoll(id,justCreated){
 function myView(b){ // how a bill looks from my side
   const payer=P(b,b.payer);const iPay=isMe(payer);
   const others=(b.shares||[]).filter(s=>s.key!==b.payer);
-  const due=sum(others.filter(s=>!s.paid).map(s=>s.amount));
+  const due=sum(others.filter(s=>!settled(s)).map(s=>s.amount));
   const mineS=(b.shares||[]).find(s=>isMe(P(b,s.key)));
-  return {payer,iPay,others,due,mine:mineS,paidN:others.filter(s=>s.paid).length};
+  return {payer,iPay,others,due,mine:mineS,paidN:others.filter(s=>settled(s)).length};
 }
 function viewBills(){
   let bs=billsSorted();
   if(ui.billFilter==="mine")bs=bs.filter(b=>myView(b).iPay);
-  if(ui.billFilter==="open")bs=bs.filter(b=>{const v=myView(b);return v.iPay?v.due>0:(v.mine&&!v.mine.paid)});
+  if(ui.billFilter==="open")bs=bs.filter(b=>{const v=myView(b);return v.iPay?v.due>0:(v.mine&&!settled(v.mine))});
   let h=`<div class="seg"><button data-bf="all" aria-pressed="${ui.billFilter==="all"}">Tất cả</button><button data-bf="mine" aria-pressed="${ui.billFilter==="mine"}">Tôi trả</button><button data-bf="open" aria-pressed="${ui.billFilter==="open"}">Chưa xong</button></div>`;
   if(!bs.length)return h+`<div class="empty" style="margin-top:14px"><b>${S.bills.length?"Không có bill nào ở đây":"Chưa có bill"}</b>${S.bills.length?"":"Bấm + để tạo bill sau bữa ăn."}</div>`;
   let cur="";
@@ -900,7 +909,7 @@ function viewBills(){
     const v=myView(b);const d=parseISO(b.date);
     let right,sub;
     if(v.iPay){right=`<b class="num">${fmtK(b.total)}</b>${v.due?`<span class="badge b-warn">Chờ ${fmtK(v.due)}</span>`:`<span class="badge b-ok">Đủ</span>`}`;sub=`Tôi trả · ${v.paidN}/${v.others.length} đã gửi`}
-    else{right=`<b class="num">${v.mine?fmtK(v.mine.amount):"–"}</b>${v.mine?(v.mine.paid?`<span class="badge b-ok">Đã trả</span>`:v.mine.sentAt?`<span class="badge b-sky">Đã báo</span>`:`<span class="badge b-warn">Chưa trả</span>`):""}`;sub=`${esc(dn(v.payer,b))} trả · ${b.people.length} người`}
+    else{right=`<b class="num">${v.mine?fmtK(v.mine.amount):"–"}</b>${v.mine?(v.mine.paid?`<span class="badge b-ok">Đã trả</span>`:v.mine.sentAt?`<span class="badge b-ok">Đã chuyển</span>`:`<span class="badge b-warn">Chưa trả</span>`):""}`;sub=`${esc(dn(v.payer,b))} trả · ${b.people.length} người`}
     const own=b.ownerPid===myPid();
     h+=`<div class="swipe" data-sw="${b.id}"><div class="swipe-act"><button class="swipe-del" data-del="${b.id}">${own?"Xóa":"Ẩn"}</button></div><button class="bill" data-bill="${b.id}"><span class="dt"><b>${d.getDate()}</b><small>${WD[d.getDay()]}</small></span><span class="mid"><b>${esc(b.placeName||b.title)}</b><small>${sub}</small></span><span class="end">${right}</span></button></div>`;
   }
@@ -1182,12 +1191,13 @@ function openBillDetail(id,opt={}){
       ${b.mode==="equal"&&(b.lines||[]).length?`<p class="small" style="margin:0 0 4px">${esc(mergeLines(b.lines).map(l=>l.name+(l.qty>1?" ×"+l.qty:"")).join(", "))}</p>`:""}
       <p class="small muted" style="margin:0 0 6px">${esc(dn(v.payer,b))} trả · ${({equal:"chia đều",lines:"gán món",items:"theo người",custom:"tự nhập"})[b.mode]||""}</p>
       ${(b.shares||[]).map(s=>{const p=P(b,s.key)||{name:"?"};const isP=s.key===b.payer;const mine=isMe(p);
-        let st=isP?"Người trả":s.paid?"Đã trả":s.sentAt?"Báo đã chuyển":"Chưa trả";
+        let st=isP?"Người trả":s.paid?"Đã trả":s.sentAt?(v.iPay?"Báo đã chuyển · kiểm tra tài khoản":"Đã chuyển"):"Chưa trả";
         let acts="";
-        if(!isP&&!s.paid){
+        if(!isP&&!settled(s)){
           if(v.iPay)acts=`${bank?`<button class="btn sm" data-qr="${esc(s.key)}">${ic("qr")} QR</button>`:""}<button class="btn sm mint" data-pay="${esc(s.key)}">${ic("check")} Đã nhận</button>`;
           else if(mine)acts=`${bank?`<button class="btn sm" data-qr="${esc(s.key)}">${ic("qr")} QR trả</button>`:""}${s.sentAt?"":`<button class="btn sm mint" data-sent="${esc(s.key)}">Tôi đã chuyển</button>`}`;
-        }else if(!isP&&s.paid&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Hoàn tác</button>`;
+        }else if(!isP&&!s.paid&&s.sentAt&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Chưa nhận được</button><button class="btn sm mint" data-pay="${esc(s.key)}">${ic("check")} Đã nhận</button>`;
+        else if(!isP&&s.paid&&v.iPay)acts=`<button class="btn sm ghost" data-unpay="${esc(s.key)}">Hoàn tác</button>`;
         if(!inBill&&!p.pid&&!isP)acts+=`<button class="btn sm" data-claim="${esc(s.key)}">Là tôi</button>`;
         return `<div class="share-wrap"><div class="share">${avatar(dn(p,b))}<div class="mid"><b>${esc(dn(p,b))}</b><small>${st}${b.mode==="items"&&s.items?" · món "+fmtK(money(s.items)):""}${b.mode==="lines"?esc(dishesOf(b,s.key)):""}</small></div><div class="amt num">${fmt(s.amount)}</div></div>${acts?`<div class="share acts" style="border:0;padding:4px 0 0 38px">${acts}</div>`:""}</div>`}).join("")}
       <div class="total"><span class="muted small">Tổng</span><b class="num">${fmt(b.total)}</b></div>${feeLine(b)}
@@ -1199,8 +1209,8 @@ function openBillDetail(id,opt={}){
     </div>`;
     const upd=fn=>{const nb={...b,people:b.people.map(p=>({...p})),shares:b.shares.map(s=>({...s}))};fn(nb);saveBill(nb,b.members)};
     $$("[data-pay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.pay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=true;s.paidAt=new Date().toISOString()});toast("Đã ghi nhận "+dn(P(b,k),b)+" trả",()=>upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null}))});
-    $$("[data-unpay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.unpay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null})});
-    $$("[data-sent]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.sent;upd(n=>{n.shares.find(s=>s.key===k).sentAt=new Date().toISOString()});toast("Đã báo cho "+dn(v.payer,b))});
+    $$("[data-unpay]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.unpay;upd(n=>{const s=n.shares.find(s=>s.key===k);s.paid=false;s.paidAt=null;s.sentAt=null})});
+    $$("[data-sent]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.sent;upd(n=>{n.shares.find(s=>s.key===k).sentAt=new Date().toISOString()});toast("Đã ghi nhận bạn chuyển tiền. "+dn(v.payer,b)+" sẽ thấy báo.")});
     $$("[data-claim]",el).forEach(x=>x.onclick=()=>{const k=x.dataset.claim;upd(n=>{const p=n.people.find(p=>p.key===k);p.pid=myPid();p.name=myName()});toast("Đã nhận phần của bạn. Bill sẽ nằm trong tab Bill.")});
     $$("[data-qr]",el).forEach(x=>x.onclick=()=>{const s=b.shares.find(s=>s.key===x.dataset.qr);openQR({person:P(b,s.key),bill:b,items:[{bill:b,share:s}],bank:b.payerBank})});
     $("#dSend",el).onclick=()=>sendBill(b);
@@ -1221,7 +1231,7 @@ function dishesOf(b,key){
   return out.length?" · "+out.join(", "):"";
 }
 function sendBill(b){
-  const lines=(b.shares||[]).filter(s=>s.key!==b.payer).map(s=>`- ${dn(P(b,s.key),b)}: ${fmt(s.amount)}${s.paid?" (đã trả)":""}`).join("\n");
+  const lines=(b.shares||[]).filter(s=>s.key!==b.payer).map(s=>`- ${dn(P(b,s.key),b)}: ${fmt(s.amount)}${settled(s)?" (đã trả)":""}`).join("\n");
   const text=`${b.placeName||b.title} ${dLabel(b.date)}, tổng ${fmt(b.total)}. ${dn(P(b,b.payer),b)} trả trước.\n${lines}\nXem bill và QR chuyển khoản:`;
   shareOrCopy({title:b.placeName||b.title,text,url:shareBase()+"#b="+b.id},"Đã chép tin nhắn kèm link bill");
 }
@@ -1248,7 +1258,7 @@ async function qrCard({fromName,bank,amount,note,title}){
 }
 async function groupCard(b){
   await fontsReady();
-  const bank=b.payerBank;const due=b.shares.filter(s=>!s.paid&&s.key!==b.payer&&s.amount>0);
+  const bank=b.payerBank;const due=b.shares.filter(s=>!settled(s)&&s.key!==b.payer&&s.amount>0);
   const cols=due.length>1?2:1,rows=Math.ceil(due.length/cols),ch=600,W=1000,H=250+rows*ch+70;
   const c=document.createElement("canvas");c.width=W;c.height=H;const x=c.getContext("2d");const F="'Be Vietnam Pro',system-ui,sans-serif";
   x.fillStyle="#EEE8FB";x.fillRect(0,0,W,H);
@@ -1305,7 +1315,7 @@ async function openQR(g){
 }
 async function openGroupQR(b){
   const el=openSheet("Ảnh QR cả nhóm",`<div class="thinking"><i></i><i></i><i></i> Đang ghép QR…</div>`);
-  const canvas=await groupCard(b);const due=b.shares.filter(s=>!s.paid&&s.key!==b.payer&&s.amount>0);
+  const canvas=await groupCard(b);const due=b.shares.filter(s=>!settled(s)&&s.key!==b.payer&&s.amount>0);
   const msg=`Tiền cơm ${b.placeName||b.title} ${dLabel(b.date)}, tổng ${fmt(b.total)}:\n${due.map(s=>`- ${dn(P(b,s.key),b)}: ${fmt(s.amount)}`).join("\n")}\nQuét đúng mã có tên mình nhé. Bill: ${shareBase()}#b=${b.id}`;
   await qrActions(el,{canvas,filename:`QR-nhom-${b.date}.png`,msg,phone:null});
 }
@@ -1315,7 +1325,7 @@ async function openGroupQR(b){
 function debtGroups(){
   const m=new Map();
   for(const b of S.bills){const payer=P(b,b.payer);if(!payer)continue;
-    for(const s of b.shares||[]){if(s.paid||s.key===b.payer||!(s.amount>0))continue;const p=P(b,s.key);if(!p)continue;
+    for(const s of b.shares||[]){if(settled(s)||s.key===b.payer||!(s.amount>0))continue;const p=P(b,s.key);if(!p)continue;
       let dir,person;
       if(isMe(payer)&&!isMe(p)){dir="in";person=p}else if(isMe(p)&&!isMe(payer)){dir="out";person=payer}else continue;
       const id=idOf(person,b);const k=dir+"|"+id;
@@ -1329,12 +1339,12 @@ function needRemind(g){const c=cfg();return g.dir==="in"&&daysAgo(g.oldest)>=c.r
 function recordRemind(g){
   const now=new Date().toISOString();const byBill={};g.items.forEach(i=>(byBill[i.bill.id]=byBill[i.bill.id]||[]).push(i.share.key));
   for(const [bid,keys] of Object.entries(byBill)){const b=S.bills.find(x=>x.id===bid);if(!b)continue;
-    saveBill({...b,shares:b.shares.map(s=>keys.includes(s.key)&&!s.paid?{...s,remindedAt:now,remindCount:(s.remindCount||0)+1}:s)},b.members)}
+    saveBill({...b,shares:b.shares.map(s=>keys.includes(s.key)&&!settled(s)?{...s,remindedAt:now,remindCount:(s.remindCount||0)+1}:s)},b.members)}
 }
 function setPaid(items,val){
   const byBill={};items.forEach(i=>(byBill[i.bill.id]=byBill[i.bill.id]||[]).push(i.share.key));const undo=[];const now=new Date().toISOString();
   for(const [bid,keys] of Object.entries(byBill)){const b=S.bills.find(x=>x.id===bid);if(!b)continue;undo.push(b);
-    saveBill({...b,shares:b.shares.map(s=>keys.includes(s.key)?{...s,paid:val,paidAt:val?now:null}:s)},b.members)}
+    saveBill({...b,shares:b.shares.map(s=>keys.includes(s.key)?{...s,paid:val,paidAt:val?now:null,sentAt:val?s.sentAt||null:null}:s)},b.members)}
   return ()=>undo.forEach(b=>saveBill(b,b.members));
 }
 function setSent(items){
@@ -1344,7 +1354,9 @@ function setSent(items){
 function viewDebts(){
   const gs=debtGroups();const inT=sum(gs.filter(g=>g.dir==="in").map(g=>g.total)),outT=sum(gs.filter(g=>g.dir==="out").map(g=>g.total));
   let h=`<div class="sum2"><div class="in"><small>Người khác nợ tôi</small><b class="num">${fmt(inT)}</b></div><div class="out"><small>Tôi nợ</small><b class="num">${fmt(outT)}</b></div></div>`;
-  if(!gs.length)return h+`<div class="empty" style="margin-top:12px"><b>Không ai nợ ai</b>Phần chưa trả trong các bill sẽ hiện ở đây.</div>`;
+  const pend=[];for(const b of S.bills){if(!isMe(P(b,b.payer)))continue;for(const s of b.shares||[])if(s.key!==b.payer&&s.sentAt&&!s.paid)pend.push({b,s})}
+  if(pend.length)h+=`<div class="sec"><h2>Đã báo chuyển</h2><small>Kiểm tra tài khoản rồi xác nhận</small></div><div class="card" style="padding-block:0"><div class="list">${pend.map(({b,s})=>`<div class="li">${avatar(dn(P(b,s.key),b))}<span class="mid"><b>${esc(dn(P(b,s.key),b))} · ${fmt(s.amount)}</b><small>${esc(b.placeName||b.title)} · ${esc(dLabel(b.date))}</small></span><span class="row" style="flex:none"><button class="btn sm ghost" data-cfno="${b.id}|${esc(s.key)}">Chưa nhận</button><button class="btn sm mint" data-cf="${b.id}|${esc(s.key)}">Đã nhận</button></span></div>`).join("")}</div></div>`;
+  if(!gs.length)return h+(pend.length?"":`<div class="empty" style="margin-top:12px"><b>Không ai nợ ai</b>Phần chưa trả trong các bill sẽ hiện ở đây.</div>`);
   for(const dir of ["in","out"]){
     const list=gs.filter(g=>g.dir===dir);if(!list.length)continue;
     h+=`<div class="sec"><h2>${dir==="in"?"Nợ tôi":"Tôi nợ"}</h2><small>${list.length} người</small></div>`;
@@ -1359,6 +1371,8 @@ function viewDebts(){
   return h;
 }
 bind.debts=m=>{
+  const cf=(v,ok)=>{const [bid,k]=v.split("|");const b=S.bills.find(x=>x.id===bid);if(!b)return;saveBill({...b,shares:b.shares.map(s=>s.key===k?(ok?{...s,paid:true,paidAt:new Date().toISOString()}:{...s,sentAt:null}):s)},b.members);toast(ok?"Đã xác nhận nhận tiền":"Đã chuyển lại thành chưa trả")};
+  $$("[data-cf]",m).forEach(b=>b.onclick=()=>cf(b.dataset.cf,true));$$("[data-cfno]",m).forEach(b=>b.onclick=()=>cf(b.dataset.cfno,false));
   const gs=debtGroups();const f=k=>gs.find(g=>g.key===k);
   $$("[data-toggle]",m).forEach(b=>b.onclick=()=>{const k=b.dataset.toggle;ui.openPairs.has(k)?ui.openPairs.delete(k):ui.openPairs.add(k);render()});
   $$("[data-openbill]",m).forEach(b=>b.onclick=e=>{e.stopPropagation();openBillDetail(b.dataset.openbill)});

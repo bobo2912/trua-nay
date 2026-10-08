@@ -1,6 +1,6 @@
 // Bộ nhớ đệm để app mở nhanh và cài được lên màn hình chính.
 // Dữ liệu nhóm luôn lấy từ Firebase, không đi qua file này.
-const CACHE = "trua-nay-v18";
+const CACHE = "trua-nay-v19";
 const SHELL = ["./", "index.html", "config.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
