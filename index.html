@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
-<script src="config.js?v=2.12.0"></script>
+<script src="config.js?v=2.12.1"></script>
 <script>(function(){var t="pastel";try{t=JSON.parse(localStorage.getItem("tn2.theme"))||"pastel"}catch(e){}document.documentElement.setAttribute("data-theme",t);var c={pastel:"#F6F4FB",light:"#F7F7F8",dark:"#121214"}[t]||"#F6F4FB";document.write('<meta name="theme-color" content="'+c+'">')})();</script>
 <style>
 /* Pastel, compact: lavender-mist ground, mint as the action colour, peach for the one playful moment (spin) */
@@ -319,7 +319,7 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from "https://www.gstatic.
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,doc,collection,setDoc,updateDoc,deleteDoc,getDoc,onSnapshot,query,where,writeBatch,arrayUnion} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 "use strict";
-const VERSION="2.12.0", BUILD="07/10/2026";
+const VERSION="2.12.1", BUILD="08/10/2026";
 /* ---------- constants ---------- */
 const TAGS={com:"Cơm",bun:"Bún/Phở",mi:"Mì",banhmi:"Bánh mì/Xôi",lau:"Lẩu/Nướng",han:"Hàn",nhat:"Nhật",trung:"Trung",healthy:"Healthy",chay:"Chay",ga:"Fastfood"};
 const PRICE={1:"<50k",2:"50–100k",3:">100k"};
@@ -544,7 +544,7 @@ async function boot(){
     if(!u||started)return;started=true;S.uid=u.uid;
     const ml=(pendingHash||"").match(/#me=([a-z0-9]{16,40})\.([a-z0-9]{20,60})/i);
     if(ml&&(!S.me||S.me.pid===ml[1])){pendingHash="";history.replaceState(null,"",location.pathname);
-      try{const nm=await switchProfile(ml[1],ml[2],false);toast("Đã liên kết với hồ sơ "+nm+". Từ giờ máy này và app dùng chung dữ liệu.");return}catch(e){renderOnboard("Link liên kết không đúng hoặc đã cũ.");return}}
+      try{const nm=await switchProfile(ml[1],ml[2],false);store("tn2.linked",ml[1]);toast("Đã liên kết với hồ sơ "+nm+". Từ giờ máy này và app dùng chung dữ liệu.");return}catch(e){renderOnboard("Link liên kết không đúng hoặc đã cũ.");return}}
     if(!S.me){renderOnboard();return}
     try{await setDoc(D("keys",S.me.pid),{secret:S.me.secret,uids:arrayUnion(S.uid)},{merge:true})}
     catch(e){if(e&&e.code==="permission-denied"){renderOnboard("Mã khôi phục trên máy này không còn đúng. Nhập lại mã hoặc tạo hồ sơ mới.");return}}
@@ -1730,15 +1730,26 @@ function openLinkSafari(){
     <p class="hint" style="margin:0">Link này giống mật khẩu: chỉ mở trên máy của bạn, đừng gửi cho người khác. Nếu Safari đã có hồ sơ khác, app sẽ hỏi có gộp dữ liệu sang hồ sơ này không.</p></div>`);
   $("#lsCopy",el).onclick=()=>copyText(link,"Đã chép link liên kết. Dán vào thanh địa chỉ Safari.");
 }
+/* shown in Safari/Zalo when a bill link opens: which profile is in use here, and how to link it to the home-screen app */
+function openLinkHelp(){
+  const el=openSheet("Hồ sơ trên trình duyệt",`<div class="stack">
+    <p class="small" style="margin:0">iPhone tách riêng dữ liệu của app trên màn hình chính, Safari và trình duyệt trong Zalo. Ở đây đang dùng hồ sơ <b>${esc(myName())}</b>. Mở link bill thường <b>không</b> tự gộp hồ sơ.</p>
+    <div class="card stack" style="background:var(--butter-soft)"><b>Để dùng chung với app</b>
+      <p class="small" style="margin:0">1. Mở app Trưa Nay từ màn hình chính → <b>Cài đặt → Liên kết Safari với app</b>.<br>2. Bấm <b>Chép link liên kết</b>, dán vào ô dưới đây (hoặc bấm <b>Mở trong Safari</b>).<br>3. Chọn <b>Chuyển và gộp dữ liệu</b>.</p></div>
+    <div class="keyrow"><input class="inp" id="lhCode" placeholder="Dán link liên kết hoặc mã khôi phục" autocomplete="off" autocapitalize="off"><button class="btn mint" id="lhGo">Liên kết</button></div>
+    <button class="btn ghost" id="lhOk">Đúng hồ sơ của tôi, không hỏi lại</button></div>`);
+  $("#lhGo",el).onclick=()=>{const raw=$("#lhCode",el).value.trim().replace(/^.*#me=/,"");const [pid,secret]=raw.split(".");if(!pid||!secret||pid.length<16){toast("Link hoặc mã chưa đúng dạng.");return}openSwitch(pid,secret)};
+  $("#lhOk",el).onclick=()=>{store("tn2.linked",myPid());closeSheet();toast("Đã ghi nhớ.")};
+}
 function openSwitch(pid,secret){
-  if(pid===myPid()){toast("Máy này đã dùng đúng hồ sơ đó rồi.");return}
+  if(pid===myPid()){store("tn2.linked",pid);toast("Máy này đã dùng đúng hồ sơ đó rồi.");return}
   const cur=myName();
   const el=openSheet("Liên kết hồ sơ",`<div class="stack">
     <p class="small" style="margin:0">Máy này đang dùng hồ sơ <b>${esc(cur)}</b>. Chuyển sang hồ sơ trong link để dùng chung với app?</p>
     <button class="btn mint block" id="swMerge">Chuyển và gộp dữ liệu của ${esc(cur)}</button>
     <p class="hint" style="margin:-4px 2px 0">Bill đã nhận, danh bạ và quán của ${esc(cur)} trên máy này được chuyển sang hồ sơ kia.</p>
     <button class="btn block" id="swOnly">Chỉ chuyển, không gộp</button><button class="btn ghost" id="swNo">Hủy</button><p class="err" id="swErr" hidden></p></div>`);
-  const run=async m=>{try{const nm=await switchProfile(pid,secret,m);closeSheet();toast(m?"Đã gộp và chuyển sang "+nm:"Đã chuyển sang hồ sơ "+nm)}catch(e){const er=$("#swErr",el);er.textContent="Link không đúng hoặc đã cũ.";er.hidden=false}};
+  const run=async m=>{try{const nm=await switchProfile(pid,secret,m);store("tn2.linked",pid);closeSheet();toast(m?"Đã gộp và chuyển sang "+nm:"Đã chuyển sang hồ sơ "+nm)}catch(e){const er=$("#swErr",el);er.textContent="Link không đúng hoặc đã cũ.";er.hidden=false}};
   $("#swMerge",el).onclick=()=>run(true);$("#swOnly",el).onclick=()=>run(false);$("#swNo",el).onclick=closeSheet;
 }
 function openDevice(){
@@ -1853,6 +1864,7 @@ function handleHash(){
   const h=pendingHash||"";pendingHash="";if(!h)return;
   history.replaceState(null,"",location.pathname);
   let m;
+  if(/#[bv]=/.test(h)&&!isStandalone()&&recall("tn2.linked")!==myPid())setTimeout(()=>toast("Trình duyệt này đang dùng hồ sơ "+myName()+".",openLinkHelp,"Khác hồ sơ app?",9000),600);
   if((m=h.match(/#b=([a-z0-9]{16,40})/i)))openBillDetail(m[1]);
   else if((m=h.match(/#p=([a-z0-9]{16,40})(?:~(.*))?/i)))addFromLink(m[1],decodeURIComponent(m[2]||"Bạn mới"));
   else if((m=h.match(/#v=([a-z0-9]{16,40})/i))){ui.tab="eat";ui.eatView="vote";render();openPoll(m[1])}
