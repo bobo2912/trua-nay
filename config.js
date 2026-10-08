@@ -7,3 +7,6 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "1070358769320",
   appId: "1:1070358769320:web:77b829fc96131dc3835c9d"
 };
+
+// Địa chỉ máy chủ thông báo (Cloudflare Worker). Để trống nếu chưa thiết lập.
+window.PUSH_URL = "";
